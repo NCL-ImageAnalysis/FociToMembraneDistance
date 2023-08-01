@@ -7,7 +7,7 @@ from the membrane of rod shaped bacterial cells. It requires a trained Ilastik m
 and a folder within the selected home folder called "Raw_Images" containg nd2 files
 """
 
-
+# Script parameters inputting settings-------------------------------------------------------------------------v
 #@ File (label="Home Folder:", style="directory") Home_Folder
 #@ File (label="Ilastik.exe file:", style="file") IlastikExe
 #@ Float (label="Foci Diameter (um):", style="format:#####.#####") Foci_Diameter
@@ -18,19 +18,28 @@ and a folder within the selected home folder called "Raw_Images" containg nd2 fi
 #@ Integer (label="Membrane Channel:") Memb_Chan
 #@ Integer (label="Foci Channel:") Foci_Chan
 #@ Integer (label="Nucleoid Channel:") Nuc_Chan
+#@ Float (label="Membrane Gaussian R^2 cutoff", style="format:#####.#####") R2_Cutoff
+#@ int (label="FWHM Cell Width Modifier (pixels):") FWHM_Modifier
+#@ int (label="Width Angle of Rotation Range (degrees):") Angle_Range
+#--------------------------------------------------------------------------------------------------------------^
 
+# Python Imports
 import os, re, sys
+# Java Imports
 from java.lang import Math, Double
 from java.io import File
+# ImageJ Imports
 from ij import IJ
 from ij.io import FileSaver
-from ij.gui import NonBlockingGenericDialog, Roi, Line, PointRoi, OvalRoi, ProfilePlot
+from ij.gui import Roi, Line, PointRoi, OvalRoi, ProfilePlot
 from ij.measure import Measurements, ResultsTable, CurveFitter
 from ij.plugin import Scaler, RGBStackMerge, RoiEnlarger
 from ij.plugin.frame import RoiManager 
 from ij.plugin.filter import Analyzer
+# Bioformats Imports
 from loci.plugins import BF
 from loci.plugins.in import ImporterOptions
+# Ilastik Imports
 from org.scijava import Context
 from org.scijava.app import DefaultStatusService
 from net.imglib2.img import ImagePlusAdapter
@@ -38,22 +47,17 @@ from org.scijava.log import StderrLogService
 from org.scijava.service import ServiceHelper
 from org.ilastik.ilastik4ij.executors import PixelClassification
 from net.imglib2.img.display.imagej import ImageJFunctions
-from fiji.plugin.trackmate import Model, Settings, SelectionModel, TrackMate
-from fiji.plugin.trackmate.detection import LogDetectorFactory, LogDetector
-from fiji.plugin.trackmate.features import FeatureFilter
+# ImageJ2 Imports
 from net.imglib2.img.display.imagej import ImageJFunctions
-from fiji.plugin.trackmate.gui.displaysettings import DisplaySettingsIO
-from fiji.plugin.trackmate.visualization.hyperstack import HyperStackDisplayer
-from fiji.plugin.trackmate.tracking.jaqaman import SparseLAPTrackerFactory
+# Trackmate Imports
+from fiji.plugin.trackmate import Model, Settings, TrackMate
+from fiji.plugin.trackmate.detection import LogDetectorFactory
+from fiji.plugin.trackmate.features import FeatureFilter
 
 # Settings----------------------------------------------------------------v
 # Ilastik Settings---------------------------------------------------v
 # Output that is used for segmentation
 IlastikOutputType = "Probabilities"
-# Location of ilastik.exe file
-# IlastikExe = r'C:\New_folder\ilastik-1.4.0rc8\ilastik.exe' # Home Computer
-# IlastikExe = r'C:\Other_Program_Files\ilastik-1.3.3post3\ilastik.exe' # CBCB Computer
-# IlastikExe = r'C:\ilastik-1.4.0-gpu\ilastik.exe' #Image analysis computer
 # Number of threads ilastik is allowed to use (-ve is no restriction)
 Threads = -1
 # Amount of ram Ilastik is allowed to use
@@ -70,6 +74,7 @@ DilationPixels = 3
 # Whether you want to apply a watershed process to the binary
 WatershedBool = False
 #------------------------------------------------------------------------^
+
 # Analyze particles settings-v
 Cell_Sizes = "200-inf"
 Cell_Circularity = "0.00-1.00"
@@ -81,16 +86,6 @@ Roi_Enlargement = 3
 PixelScale = 0.065
 #----------------------------------^
 
-# Membrane width measurement settings-v
-# R^2 value that gausian fits must exceed
-R2_Cutoff = 0.95
-# Total number of pixels you want to offset FWHM by to match membrane
-# Positive values put membrane outside of FWHM, negative brings membrane in
-FWHM_Modifier = -4
-# Range of angles you want to search to find minimum membrane width
-Angle_Range = 20
-#-------------------------------------^
-
 #-------------------------------------------------------------------------^
 
 ###################################################################################################
@@ -100,23 +95,17 @@ Angle_Range = 20
 #--------------------------------------------FUNCTIONS--------------------------------------------#
 
 def checkInputs(HomePath):
-	"""Takes ij.gui.GenericDialog and returns a list with processed inputs
-	
-	List contains: 
-	[Home folder (str), 
-	Prominence setting (str), 
-	Chromatic abberation correction (float), 
-	Membrane channel number (int), 
-	Foci channel number (int), 
-	Membrane channel colour (str), 
-	Foci channel colour (str), 
-	Ilastik exe file (Java.io.File), 
-	Ilastik project file (Java.io.File), 
-	Path to raw image folder (str),
-	List of .nd2 files ([str])]"""
+	"""Checks the inputs given by script parameters and performs some processing
 
+	Args:
+		HomePath (str): Filepath to the home folder
 
-	# Checks for and processes the ilastik.exe file input------v
+	Returns:
+		Java.io.File: Ilastik project file
+		str: Filepath to the raw image folder
+		[str]: List of .nd2 files
+	"""	
+
 	# Checks that the path to the ilastik.exe file is correct
 	if IlastikExe.exists() == False:
 		IJ.error(
@@ -127,11 +116,12 @@ def checkInputs(HomePath):
 	
 	# Gets the ilastik project file from the home folder and---------------v
 	# returns it as a Java file object
+
 	# Gets all the files in the home folder
 	HomeFiles = os.listdir(HomePath)
-	# Gets a list of files that have the 
-	# .ilp extension to find Ilastik projects
+	# Creates a regex object to search for .ilp files
 	ilp_re_Obj = re.compile(r'\.ilp$', flags=re.IGNORECASE)
+	# Filters the list of files to only include .ilp files
 	IlastikProjectFiles = filter(ilp_re_Obj.search, HomeFiles)
 	# Checks that exactly one ilastik project is present
 	if len(IlastikProjectFiles) != 1:
@@ -143,8 +133,6 @@ def checkInputs(HomePath):
 	# Converts the Ilastik project file into a Java File object
 	ProjectFilePath = os.path.join(HomePath, IlastikProjectFiles[0])
 	IlastikProjectFile = File(ProjectFilePath)
-	# Adds the project file to the list that is returned
-
 	#----------------------------------------------------------------------^
 
 	# Checks that the channel numbers are not the same---v
@@ -156,10 +144,10 @@ def checkInputs(HomePath):
 	#----------------------------------------------------^
 
 	# Checks for the raw image folder and returns it-------------------------v
-	# Generates the path to the folder containing the raw images
-	RawImagePath = os.path.join(HomePath, "Raw_Images")
+
 	# Checks that a home folder was chosen 
 	# that has a subfolder named "Raw_Images"
+	RawImagePath = os.path.join(HomePath, "Raw_Images")
 	if os.path.exists(RawImagePath) == False:
 		IJ.error(
 			"Please choose a home folder containing a 'Raw_Images' subfolder"
@@ -168,22 +156,66 @@ def checkInputs(HomePath):
 	#------------------------------------------------------------------------^
 
 	# Gets a list of images, filters for .nd2 files and returns as a list-v
+
 	# Gets a list of filenames of the raw images
 	RawImageList = os.listdir(RawImagePath)
-	# This removes any filenames that do not have a .nd2 extension
+	# Creates a regex object to search for .nd2 files
 	nd2_re_Obj = re.compile(r'\.nd2$', flags=re.IGNORECASE)
+	# Filters the list of files to only include .nd2 files
 	ImageList = filter(nd2_re_Obj.search, RawImageList)
 	# Checks that one or more images are present in the folder
 	if len(ImageList) == 0:
 		IJ.error("No nd2 files were detected")
 		return False
 	#---------------------------------------------------------------------^
+
 	return IlastikProjectFile, RawImagePath, ImageList
 
+def filenameCommonality(FileList):
+	"""Gets the common substring of a list of strings
+
+	Args:
+		ImageList ([str]): List of filenames
+
+	Returns:
+		str: Common filename substring
+	"""	
+	
+	if len(FileList) < 2:
+		try:
+			return FileList[1]
+		except IndexError:
+			return ""
+	# Initialising variables
+	Commonality = ""
+	StringLength = 1
+	# Iterates through each character of the first filename
+	while StringLength < len(FileList[0]):
+		# Gets the substring of the first filename
+		Substring = FileList[0][:StringLength]
+		# Iterates through every other filename in the list
+		for Image in FileList[1:]:
+			# If the substrings ever do not match 
+			# will return the common substring
+			if Image[:StringLength] != Substring:
+				return Commonality
+		# If the substrings match for all filenames
+		# will set the commonality to the substring
+		Commonality = Substring
+		# Increments the string length
+		StringLength += 1
+	return Commonality
+
 def scaleAndCrop(Scale_This_ImagePlus, Scaling_Factor):
-	"""Takes ij.ImagePlus, scaling factor as a float and returns a 
-	scaled ij.ImagePlus which has been cropped down to given 
-	width/height to correct for chromatic abberation between channels"""
+	"""Scales up and then crops an image to correct for chromatic abberation 
+
+	Args:
+		Scale_This_ImagePlus (ij.ImagePlus): Image to be corrected
+		Scaling_Factor (float): Value to scale the image by. Must be greater than 1
+
+	Returns:
+		ij.ImagePlus: Scaled and cropped image
+	"""	
 	
 	# Gets the dimensions of the image, only Width and Height are needed
 	(Width, 
@@ -229,20 +261,26 @@ def chromaticAbberationCorrection(
 		NucleoidChannelNumber, 
 		MembraneChannelColour,
 		BaseFilepath):
-	"""Corrects for chromatic abberation between 
-	red and green channels and saves the corrected images
-	
-	Takes images from bioformats import with split 
-	channels enabled [ImagePlus], scaling factor 
-	for chromatic abberation (float), 
-	Channel number for membrane (int), and foci (int), 
-	channel colour of the membrane (str), filepath to save folder
-	  with an extensionless filename (str) and returns the corrected membrane 
-	  and foci channels as ij.ImagePlus objects"""
+	"""Performs the neccessary corrections for chromatic abberation
 
-	# Depending on which colour is membrane and which colour is foci 
-	# will send the appropriate channel to have the 
-	# chromatic abberation correction
+	Args:
+		ArrayofImages ([ij.ImagePlus]): List of images to be corrected
+		RedChromaticAbberationSetting (float): Scaling factor for correction of the red image
+		UVChromaticAbberationSetting (float): Scaling factor for correction of the UV image
+		MembraneChannelNumber (int): Channel number of the membrane image
+		FociChannelNumber (int): Channel number of the foci image
+		NucleoidChannelNumber (int): Channel number of the nucleoid image
+		MembraneChannelColour (str): Colour of the membrame image
+		BaseFilepath (str): Filepath to the save folder
+
+	Returns:
+		ij.ImagePlus: Corrected membrane image
+		ij.ImagePlus: Corrected foci image
+		ij.ImagePlus: Corrected nucleoid image
+	"""	
+
+	# Depending on which colour is membrane and which colour is
+	# the foci channel it will correct the appropriate image
 	if MembraneChannelColour == "Red":
 		Membrane_Image = scaleAndCrop(
 			ArrayofImages[MembraneChannelNumber], 
@@ -255,10 +293,13 @@ def chromaticAbberationCorrection(
 			RedChromaticAbberationSetting
 		)
 		Membrane_Image = ArrayofImages[MembraneChannelNumber]
+	# Performs the correction on the nucleoid image
 	Nucleoid_Image = scaleAndCrop(
 		ArrayofImages[NucleoidChannelNumber], 
 		UVChromaticAbberationSetting
 	)
+	# Resets the display range of the images
+	# Results in easier viewing upon opening
 	Foci_Image.resetDisplayRange()
 	Membrane_Image.resetDisplayRange()
 	Nucleoid_Image.resetDisplayRange()
@@ -284,15 +325,24 @@ def generateMembraneProbability(
 		Classification_Type, 
 		BaseFilename, 
 		BaseFolderpath):
-	"""Runs the ilastik model on the membrane channel 
-	and saves/returns the output
-	
-	Takes Membrane channel (ij.ImagePlus), 
-	org.ilastik.ilastik4ij.executors.PixelClassification, 
-	PixelClassification.PixelPredictionType, 
-	extensionless filename (str), 
-	path to folder where probability map will be saved (str) 
-	and returns the probability map (ij.ImagePlus)"""
+	"""Performs Ilastik segementation of the membrane image
+
+	Args:
+		MembraneImagePlus (ij.ImagePlus): Membrane image
+		Classification_Obj 
+			(org.ilastik.ilastik4ij.executors.PixelClassification): 
+			Pixel classification class for Ilastik
+
+		Classification_Type 
+			(PixelClassification.PixelPredictionType): 
+			Pixel prediction type class for Ilastik
+
+		BaseFilename (str): Extensionless filename
+		BaseFolderpath (str): Path to savefolder
+
+	Returns:
+		ij.ImagePlus: Membrane probability map
+	"""	
 
 	# Need to convert this from ImagePlus -> ImgPlus
 	Membrane_ImgPlus = ImagePlusAdapter.wrapImgPlus(MembraneImagePlus)
@@ -315,15 +365,21 @@ def segmentIlastikOutput(
 		Gaussian_Setting, 
 		Thesholding_Method, 
 		Dilation_Setting, 
-		Watershed_Bool, 
+		Watershed_Bool,
 		BaseFilepath):
-	"""Segements the probability map generated by 
-	ilastik and saves/returns the binary image
-	
-	Takes probability map (ij.ImagePlus), Gaussian sigma (int/bool), 
-	Thresholding method (str), number of pixels to dilate the binary (int), 
-	bool for whether to apply a watershed, filepath to save folder with an 
-	extensionless filename (str) and returns the binary image (ij.ImagePlus)"""
+	"""Converts the membrane probability map to a binary image
+
+	Args:
+		Ilastik_ImagePlus (ij.ImagePlus): Membrane probability map
+		Gaussian_Setting (int): Gaussian Blur Sigma
+		Thesholding_Method (str): ImageJ thresholding method
+		Dilation_Setting (int): Number of pixels to expand cells by
+		Watershed_Bool (bool): Whether or not to perform the watershed function
+		BaseFilepath (str): Savepath for the output
+
+	Returns:
+		ij.ImagePlus: Segmented binary image
+	"""	
 
 	# If gaussian blur is enabled will perform it 
 	# with the sigma value given in macro settings
@@ -360,14 +416,20 @@ def getCellRoi(
 		Cell_Size_Setting, 
 		Cell_Circularity_Setting, 
 		File_Path):
-	"""Runs the analyze particles command on a binary image 
-	and saves/returns the resulting rois and a combined roi
-	
-	Takes Binary image (ij.ImagePlus), Min/Max size (str), 
-	Min/Max circularity (str), file path to save the rois"""
+	"""Runs analyze particles on the binary image, returning the ROI
 
-	# Runs the analyze particles command to get cell ROI. 
-	# Done by adding to the overlay in order to not have ROIManger shown to user
+	Args:
+		Binary_Image (ij.ImagePlus): Segmented binary image
+		Cell_Size_Setting (str): Min/Max size settings for analyse particles
+		Cell_Circularity_Setting (str): Min/Max circularity settings for analyse particles
+		File_Path (str): File path to save the ROIs
+
+	Returns:
+		[PolygonRoi]: Individual cell rois
+		PolygonRoi: Combined cell rois
+	"""	
+
+	# Defines analyse particles settings
 	AnalyzeParticlesSettings = (
 		"Size=" 
 		+ Cell_Size_Setting 
@@ -375,7 +437,8 @@ def getCellRoi(
 		+ Cell_Circularity_Setting 
 		+ " clear overlay exclude"
 	)
-
+	# Runs the analyze particles command to get cell ROI. 
+	# Done by adding to the overlay in order to not have ROIManger shown to user
 	IJ.run(Binary_Image, "Analyze Particles...", AnalyzeParticlesSettings)
 	# Gets the Overlayed ROIs from analyze particles
 	Overlayed_Rois = Binary_Image.getOverlay()
@@ -383,12 +446,17 @@ def getCellRoi(
 	CellRoiList = Overlayed_Rois.toArray()
 	# Removes this overlay to clean up the image
 	IJ.run(Binary_Image, "Remove Overlay", "")
+	if len(CellRoiList) < 1:
+		# If no cells are found will return an empty list
+		return [], None
+	# Initialises RoiManager but keeps it hidden from the user
 	Roi_Manger = RoiManager(True)
 	# Adds all the ROI to the ROI Manager
 	for CellNumber in range(0, len(CellRoiList)):
 		# Renames the roi to give it a name 
 		# to trace data back to individual cells
 		CellRoiList[CellNumber].setName("Cell_" + str(CellNumber + 1))
+		# Adds the roi to the RoiManager
 		Roi_Manger.addRoi(CellRoiList[CellNumber])
 	# Deselects any selected ROI so whole list of ROI is saved
 	Roi_Manger.deselect()
@@ -399,36 +467,55 @@ def getCellRoi(
 	# Gets the combined ROIs from the image
 	MergedRois = Binary_Image.getRoi()
 	# Deselects the ROI from the image
-	MembraneBinary.resetRoi()
-	# Clears the RoiManager
+	Binary_Image.resetRoi()
+	# Closes the RoiManager
 	Roi_Manger.close()
 	return CellRoiList, MergedRois
 
 def getRoiMeasurements(SampleRoi, Image, Measurement_Options):
-	"""Gets the mean value of the provided Roi for the given image
+	"""Gets the given measurements of the provided Roi for the given image
+
+	Args:
+		SampleRoi (ij.gui.Roi): Roi to be analysed
+		Image (ij.ImagePlus): Image to be analysed
+		Measurement_Options ([str]): ij.Measure.Measurements to be taken
+
+	Returns:
+		[float]: List of measurements in same order as Measurement_Options
+	"""	
 	
-	Takes an ij.gui.Roi and an ij.ImagePlus and returns a double"""
 	# Initialises a new empty results table
 	RTable = ResultsTable()
 	# Initialises an Analyzer object using 
 	# the image and the empty results table
 	An = Analyzer(Image, RTable)
+	# Selects the roi on the image
 	Image.setRoi(SampleRoi)
+	# Takes the measurements
 	An.measure()
+	# Takes the desired results from 
+	# the results table and adds to a list
 	OutputList = []
 	for Option in Measurement_Options:
 		OutputList.append(RTable.getValue(Option, 0))
+	# Clears the results table
 	RTable.reset()
+	# Clears the roi from the image
 	Image.resetRoi()
 	return OutputList
 
 def getBackground(Image, MergedRois, PixelIncrease):
-	"""Deletes the pixels no found within a certain distance of segmented cells
-	
-	Takes image to be subtracted (ij.ImagePlus), 
-	Merged cell rois (ij.gui.Roi), 
-	Number of pixels to enlarge rois by (int), 
-	file path where subtracted image will be saved (str)"""
+	"""Measures the non-cell fluorescence intensity of the image
+
+	Args:
+		Image (ij.ImagePlus): Image to be measured
+		MergedRois (ij.gui.Roi): All of the cell Rois merged
+		PixelIncrease (int): Number of pixels to expand 
+			cells by to avoid fluorescence halo
+
+	Returns:
+		float: Mean fluorescence intensity of the background
+	"""	
 
 	# Enlarges the rois before inversion so foci 
 	# just outside the membrane are not recognised
@@ -440,12 +527,26 @@ def getBackground(Image, MergedRois, PixelIncrease):
 	InvertedRoi = Image.getRoi()
 	# Gets the mean value of the background
 	BackgroundMean = getRoiMeasurements(InvertedRoi, Image, ["Mean"])[0]
+	# Clears the roi from the image
 	Image.resetRoi()
 	return BackgroundMean
 
 def getTrackmateFoci(Image, Radius, QualityThresh):
+	"""Uses TrackMate to find foci in the image
+
+	Args:
+		Image (ij.ImagePlus): Image containing foci
+		Radius (float): Expected radius of foci in pixels
+		QualityThresh (float): Quality threshold for trackmate
+
+	Returns:
+		dict: Quality of foci using tuple of x,y coordinates as key
+		dict: Roi of Spots using tuple of x,y coordinates as key
+	"""	
+	
 	# Removing the scale so that can more easily convert to ROIs
 	IJ.run(Image, "Set Scale...", "distance=0 known=0 unit=pixel")
+	# Clears ROI from the image
 	Image.resetRoi()
 	# Creates a TrackMate model object where data is saved
 	TModel = Model()
@@ -453,6 +554,7 @@ def getTrackmateFoci(Image, Radius, QualityThresh):
 	TSettings = Settings(Image)
 	# Using Laplacian of Gaussian (LoG) detector
 	TSettings.detectorFactory = LogDetectorFactory()
+	# Specifies essential detector settings
 	TSettings.detectorSettings = {
 		'DO_SUBPIXEL_LOCALIZATION' : True,
 		'RADIUS' : Radius,
@@ -507,10 +609,16 @@ def getTrackmateFoci(Image, Radius, QualityThresh):
 	return QualityDict, SpotDict
 
 def rasteriseOutline(x_array, y_array):
-	"""Takes pair of integer lists corresponding to 
-	x/y coordinates of a polygon and returns 
-	pair of integer lists corresponding to 
-	coordinates for the whole outline of the polygon"""
+	"""Fills in points for the outline of a polygon
+
+	Args:
+		x_array ([float]): X coordinates of polygon
+		y_array ([float]): Y coordinates of polygon
+
+	Returns:
+		[float]: Rasterised X coordinates of polygon
+		[float]: Rasterised Y coordinates of polygon
+	"""	
 
 	# Defines arrays that will be filled with connected coordinates
 	connected_x = []
@@ -565,6 +673,17 @@ def rasteriseOutline(x_array, y_array):
 		return connected_x, connected_y
 
 def distanceBetweenPoints(X1, Y1, X2, Y2):
+	"""Calculates the distance between two coordinates
+
+	Args:
+		X1 (float): Start X coordinate
+		Y1 (float): Start Y coordinate
+		X2 (float): End X coordinate
+		Y2 (float): End Y coordinate
+
+	Returns:
+		float: Distance between the two points
+	"""	
 	xdiff = X1 - X2
 	ydiff = Y1 - Y2
 	Distance = Math.sqrt((xdiff*xdiff) + (ydiff*ydiff))
@@ -572,12 +691,17 @@ def distanceBetweenPoints(X1, Y1, X2, Y2):
 
 
 def nearestNeighbourPoints(PolyRoi, MarkerPoint):
-	"""Takes ij.gui.PolygonRoi and ij.gui.PointRoi and returns the 
-	closest distance between the PointRoi and the outer edge 
-	of the PolygonRoi as a float"""
+	"""Finds the closest distance between a point and a polygon edge
+
+	Args:
+		PolyRoi (ij.gui.PolygonRoi): Polygon roi
+		MarkerPoint (tuple): Contains X and Y coordinates of point
+
+	Returns:
+		float: Closest distance to the polygon shell
+	"""	
 
 	# Sets the initial distance to infinity 
-	# so will always be lower than one value
 	distance = float('inf')
 	# Gets the outline as a polygon
 	Poly = PolyRoi.getPolygon()
@@ -603,52 +727,82 @@ def checkSoleContainer(
 		Cell_to_Points_Dict, 
 		Points_to_Cell_Dict):
 	"""Checks if the given foci is solely contained by/closest to the given cell roi
-	
-	Takes foci (java.awt.Point), enlarged cell roi (ij.gui.Roi), 
-	cell roi (ij.gui.Roi), Cell_to_Points_Dict (dict), 
-	Points_to_Cell_Dict (dict)"""
 
-	# Checks if the point falls within the enlarged roi
-	if enlarged_CellRoi.containsPoint(Point[0], Point[1]):
-		# Checks if the point has already been assigned to another cell
-		if Point not in Points_to_Cell_Dict:
-			return True, Cell_to_Points_Dict
+	Args:
+		Point (tuple): Contains X and Y coordinates of point
+		enlarged_CellRoi (ij.gui.PolygonRoi): Roi of cell with added buffer
+		CellRoi (ij.gui.PolygonRoi): Roi of cell
+		Cell_to_Points_Dict (dict): Dictionary containing cell roi as key and
+			list of points contained within the cell as value
+		Points_to_Cell_Dict (dict): Dictionary containing point as key and
+			cell roi as value
+
+	Returns:
+		bool: Whether or not the point is solely contained 
+			by/closest to the given cell roi
+		dict: Updated Cell_to_Points_Dict
+	"""	
+	
+	# Checks whether the point falls within the 
+	# enlarged roi and if not will return false
+	if not enlarged_CellRoi.containsPoint(Point[0], Point[1]):
+		return False, Cell_to_Points_Dict
+	
+	# Checks if the point has already been assigned to another cell.
+	try:
 		# Gets the other cells roi from the 
 		# dictionary with the point as the key
 		OtherCellRoi = Points_to_Cell_Dict[Point]
-		# Checks if the point is within the un-enlarged (current) roi
-		if CellRoi.containsPoint(Point[0], Point[1]):
-			# Removes the point from being assigned to the old cell roi
-			Cell_to_Points_Dict[OtherCellRoi].remove(Point)
-			return True, Cell_to_Points_Dict
-		# Checks if instead the point is within the un-enlarged (old) roi
-		elif OtherCellRoi.containsPoint(Point[0], Point[1]):
-			# If true then no dictionaries need altering
-			return False, Cell_to_Points_Dict
-		# If it falls within neither roi then will 
-		# determine the closest roi to it
-		# Calls the nearestNeighbourPoints function to 
-		# get the closest distance to one of the points
-		CellDistance = nearestNeighbourPoints(CellRoi, Point)
-		OtherCellDistance = nearestNeighbourPoints(OtherCellRoi, Point)
-		# Checks if the new roi is closest
-		if CellDistance < OtherCellDistance:
-			# Removes the point from being assigned to the old cell roi
-			Cell_to_Points_Dict[OtherCellRoi].remove(Point)
-			return True, Cell_to_Points_Dict
+	# If the point has not already been assigned then will
+	# return true and the dictionaries will not be altered
+	except(KeyError):
+		return True, Cell_to_Points_Dict
+	
+	# Checks if the point is within the un-enlarged (current) roi
+	if CellRoi.containsPoint(Point[0], Point[1]):
+		# Removes the point from being assigned to the old cell roi
+		Cell_to_Points_Dict[OtherCellRoi].remove(Point)
+		return True, Cell_to_Points_Dict
+	# Checks if instead the point is within the un-enlarged (old) roi
+	elif OtherCellRoi.containsPoint(Point[0], Point[1]):
+		# If true then no dictionaries need altering
+		return False, Cell_to_Points_Dict
+	# If it falls within neither roi then will determine the
+	# closest roi to it by calling the nearestNeighbourPoints 
+	# function to get the closest distance to one of the points
+	CellDistance = nearestNeighbourPoints(CellRoi, Point)
+	OtherCellDistance = nearestNeighbourPoints(OtherCellRoi, Point)
+	# Checks if the new roi is closest
+	if CellDistance < OtherCellDistance:
+		# Removes the point from being assigned to the old cell roi
+		Cell_to_Points_Dict[OtherCellRoi].remove(Point)
+		return True, Cell_to_Points_Dict
+	# If the old roi is closest then will return false and
+	# the dictionaries will not be altered
 	else:
 		return False, Cell_to_Points_Dict
+		
 
 def getFoci(Image, Radius, Quality, CellRoiList, PixelIncrease):
 	"""Gets the foci found within each cell roi
-	
-	Takes the foci image (ij.ImagePlus), Prominence setting (str), 
-	array of cell rois ([ij.gui.Roi]), 
-	Number of pixels to enlarge rois by (int) 
-	and returns a dictionary with cell rois as keys (ij.gui.Roi) 
-	and list of points as values ([java.awt.Point]), 
-	an roi containing all foci (ij.gui.PointRoi)"""
 
+	Args:
+		Image (ij.ImagePlus): Image containing foci
+		Radius (float): Expected radius of the foci
+		Quality (float): Trackmate quality threshold
+		CellRoiList ([ij.gui.Roi]): List containing cell rois
+		PixelIncrease (int): Number of pixels to expand rois by
+
+	Returns:
+		dict: Dictionary containing cell roi as key and
+			list of points contained within the cell as value
+		dict: Dictionary containing foci tuple as key and 
+			foci quality as value
+		dict: Dictionary containing foci tuple as key and
+			spot roi as value
+	"""	
+
+	# Uses TrackMate to get the foci from the image
 	QualityDict, SpotDict = getTrackmateFoci(Image, Radius, Quality)
 	# Creates dictionaries to get per cell points
 	Cell_to_Points_Dict = {}
@@ -685,47 +839,29 @@ def getFoci(Image, Radius, Quality, CellRoiList, PixelIncrease):
 					Cell_to_Points_Dict[CellRoi] = [Point]
 	return Cell_to_Points_Dict, QualityDict, SpotDict
 
-def saveFociRoi(CellRoiList, Cell_to_Points_Dict, File_Path):
-	"""Saves the foci in the provided dictionary as roi
-	
-	Takes array of cell rois ([ij.gui.Roi]), a dictionary with 
-	cell rois as keys and list of their containing foci as 
-	points the values ({ij.gui.Roi = [java.awt.Point]}), 
-	an roi containing all foci (ij.gui.PointRoi), 
-	file path to save the roi (str)"""
-
-	# Creates an RoiManager Instance
-	Roi_Manger = RoiManager(True)
-	# Uses the list so can maintain this order going forward
-	for AnalysedRoi in CellRoiList:
-		# Sets the name of the roi to match the cell roi name
-		CellRoiName = AnalysedRoi.getName()
-		# If the cell has no foci then will not save the PointRoi
-		try:
-			FociNumber = 0
-			# Will go through the foci found in the list entry 
-			# in the dictionary and add them to a single PointRoi
-			for CellFoci in Cell_to_Points_Dict[AnalysedRoi]:
-				# Creates an empty PointRoi obj
-				SaveRoi = PointRoi(CellFoci[0], CellFoci[1])
-				SaveRoi.setName(CellRoiName + "-Foci_" + str(FociNumber + 1))
-				# Adds the point to the roi manager
-				Roi_Manger.addRoi(SaveRoi)
-				FociNumber += 1
-		# If the cell has no foci then will not save the PointRoi
-		except(KeyError):
-			pass
-	# Saves the roi as a zip file using the image filename 
-	Roi_Manger.save(File_Path)
-	Roi_Manger.close()
-
 def getCellMeasurements(RoiList, Image, Background):
+	"""Calls the getRoiMeasurements function 
+		to get measurements of each cell roi
+
+	Args:
+		RoiList ([ij.gui.Roi]): List of cell rois
+		Image (ij.ImagePlus): Image to be measured
+		Background (float): Background fluorescence 
+			to be subtracted from mean
+
+	Returns:
+		dict: Dictionary containing cell roi as key and
+			list of measurements as value
+	"""	
+
 	OutputDict = {}
+	# Iterates through each cell roi and gets the measurements
 	for CellRoi in RoiList:
+		# Calls the getRoiMeasurements function
 		OutputDict[CellRoi] = getRoiMeasurements(
 			CellRoi, 
 			Image, 
-			["Mean", "Area", "Major", "Max"]
+			["Mean", "Area", "Major", "Max", "Minor"]
 		)
 		# If the roi contains overexposed pixels 
 		# will set mean value to infinity
@@ -736,9 +872,19 @@ def getCellMeasurements(RoiList, Image, Background):
 	return OutputDict
 
 def getLineEndCoords(X, Y, Length, Angle):
-	"""Takes the x and y the starting point of the line, 
-	the desired length and angle of a line and returns 
-	the end coordinates of that line"""
+	"""Gets the end coordinates of a line from the 
+		start coordinates, length and angle of the line
+
+	Args:
+		X (float): Starting x coordinate
+		Y (float): Starting y coordinate
+		Length (float): Length of the line
+		Angle (int): Angle of the line
+
+	Returns:
+		float: End x coordinate
+		float: End y coordinate
+	"""	
 
 	# Need to convert the angle to radians 
 	Radian = Math.toRadians(Angle)
@@ -749,14 +895,20 @@ def getLineEndCoords(X, Y, Length, Angle):
 
 
 def fullWidthHalfMax(Image, LineRoi):
-	"""Gets the fluorescence intesnsity profile of a line, 
-	fits a gaussian curve and calculates the 
-	full width half maximum of that curve
-	
-	Takes an Image (ij.ImagePlus) and a Line roi (ij.gui.Line) 
-	and returns the parameters: minimum, maximum, 
-	centre of the peak, standard deviation, R^2 ([double]) 
-	and the full width half maximum of the gaussian curve (double)"""
+	"""Gets the full width half maximum of a line roi
+
+	Args:
+		Image (ij.ImagePlus): Image to be measured
+		LineRoi (ij.gui.Line): Line to be used for intensity profile
+
+	Returns:
+		[float]: Parameters of the gaussian curve:
+			[minimum, maximum, centre of the peak, 
+			standard deviation, sum of residuals squared]
+		float: Full width half maximum of the gaussian curve
+		float: R^2 value of the gaussian curve
+		float: Sum of residuals squared of the gaussian curve
+	"""	
 	
 	# Adds the line roi to the image
 	Image.setRoi(LineRoi)
@@ -792,9 +944,29 @@ def fullWidthHalfMax(Image, LineRoi):
 	Image.resetRoi()
 	return Parameters, FullWidHMax, R_Squared, SDevRes
 
-def distanceFromMembrane(Angle, Foci, Image, Length):
-	"""Gets the width of the membrane and distance of foci from 
-	membrane edges and centre of the cell"""
+def distanceFromMembrane(Angle, 
+			Foci,
+			Image, 
+			Length, 
+			R2Cutoff, 
+			FWHMModifier):
+	"""Gets membrane width, distance of foci 
+		from the membrane and the cell centre
+
+	Args:
+		Angle (float): Angle of the line
+		Foci (tuple): X and Y coordinates of the foci
+		Image (ij.ImagePlus): Image to be measured
+		Length (float): Initial length of the line
+		R2Cutoff (float): Minimum R^2 value of the gaussian fit
+		FWHMModifier (int): Amount to offset the full width half maximum
+
+	Returns:
+		float: Full width half maximum of the gaussian curve
+		float: Distance from the membrane to the foci
+		float: Distance from the centre of the cell to the foci
+		ij.gui.line: Line roi matching the membrane width
+	"""	
 
 	# Need to make sure when getting the other side 
 	# of the line the angle isnt going over 360 degrees 
@@ -819,7 +991,8 @@ def distanceFromMembrane(Angle, Foci, Image, Length):
 		Image, 
 		TempLineRoi
 	)
-	ModifiedFWHM = FullWidHMax + FWHM_Modifier
+	# Offsets the full width half maximum by given amount
+	ModifiedFWHM = FullWidHMax + FWHMModifier
 	# Finds the distance from the start of the line 
 	# to the start of the membrane
 	DistanceToMembraneStart = Parameters[2] - (ModifiedFWHM/2)
@@ -875,34 +1048,47 @@ def distanceFromMembrane(Angle, Foci, Image, Length):
 		Foci[0], 
 		Foci[1]
 	)
+	# Converts the line roi to an area roi so can check if
+	# it contains the foci
 	MembraneAreaRoi = MembraneLineRoi.convertLineToArea(MembraneLineRoi)
 	# Checks whether the line has the shortest distance found so far, 
 	# if the R^2 of the fit is greater than a certain thresholding 
 	# and that it contains the foci
-	if R_Squared > R2_Cutoff and MembraneAreaRoi.containsPoint(Foci[0], Foci[1]):
-		# Finds which distance is shorter the distance from the 
-		if startdist < enddist:
-			if enddist > ModifiedFWHM:
-				startdist = -startdist
-			return ModifiedFWHM, startdist, centredist, MembraneLineRoi
-		else: 
-			if startdist > ModifiedFWHM:
-				enddist = -enddist
-			return ModifiedFWHM, enddist, centredist, MembraneLineRoi
-	# Returns width as infinity if angle did not meet 
-	# sufficent r^2 or does not contain the foci
-	return float("inf"), None, None, None
+	Contains = MembraneAreaRoi.containsPoint(Foci[0], Foci[1])
+	if R_Squared < R2Cutoff or not Contains:
+		# Returns width as infinity if did not meet requirements
+		return float("inf"), None, None, None
+	# Checks whether the start or end of 
+	# the membrane is closer to the foci
+	if startdist < enddist:
+		shortestdist = startdist
+		longestdist = enddist
+	else:
+		shortestdist = enddist
+		longestdist = startdist
+	# Checks whether the foci is outside the membrane limits
+	# and if so sets the distance to negative
+	if longestdist > ModifiedFWHM:
+		shortestdist = -shortestdist
 
+	return ModifiedFWHM, shortestdist, centredist, MembraneLineRoi
 
 def lineRotationIterator(Image, Foci, CellRoi):
 	"""Gets the shortest line that can be drawn across 
-	the width of a cell for a given point
-	
-	Takes a membrane image (ij.ImagePlus), a point (java.awt.Point) 
-	and an roi defining the cell (ij.gui.Roi) and returns the width 
-	of the cell at the point, the distance of the point from the 
-	membrane, the distance of the point from the centre of the cell,
-	and the line roi used to determine these values."""
+		the width of a cell for a given point
+
+	Args:
+		Image (ij.ImagePlus): Image to be analysed
+		Foci (tuple): Tuple containing the x and y coordinates of the foci
+		CellRoi (ij.gui.PolygonRoi): Roi defining the cell
+
+	Returns:
+		float: Width of the cell at the point
+		float: Distance from the membrane to the foci
+		float: Distance from the centre of the cell to the foci
+		ij.gui.Line: Line roi used to determine these values
+		int: Angle of the line
+	"""	
 
 	# Initialises a new empty results table
 	RTable = ResultsTable()
@@ -925,14 +1111,25 @@ def lineRotationIterator(Image, Foci, CellRoi):
 	if ElipseAngle < 0:
 		ElipseAngle = 360 + ElipseAngle
 	ApproxAngle = Math.round(ElipseAngle) + 90
-	# Iterates through angles 10 degrees either side of the approximate angle
-	for Angle in range(ApproxAngle - Angle_Range/2, ApproxAngle + (Angle_Range/2) + 1):
+	# Sets the range of angles to iterate through
+	AngleStart = ApproxAngle - (Angle_Range/2)
+	AngleEnd = ApproxAngle + (Angle_Range/2) + 1
+	# Iterates through angles a given number of 
+	# degrees either side of the approximate angle
+	for Angle in range(AngleStart, AngleEnd):
+		# Gets the distance from the membrane to the foci,
+		# the distance from the centre of the cell to the foci
+		# and the line roi used to determine these values
 		FullWidHMax, membdist, centredist, MembraneLineRoi = distanceFromMembrane(
 			Angle, 
 			Foci, 
 			Image, 
-			Width
+			Width,
+			R2_Cutoff,
+			FWHM_Modifier
 		)
+		# Will update the temporary values only if the width 
+		# is smaller than the current smallest width
 		if FullWidHMax < TempWidth:
 			TempWidth, TempMembDist, TempCentDist, TempWidthLine, TempAngle = (
 				FullWidHMax, 
@@ -948,65 +1145,128 @@ def lineRotationIterator(Image, Foci, CellRoi):
 	return TempWidth, TempMembDist, TempCentDist, TempWidthLine, TempAngle
 
 def distanceToRoiEdge(Angle, Foci, CellRoi):
+	"""Gets distance of a point to the edge of a given roi
+
+	Args:
+		Angle (int): Angle of the line to be drawn
+		Foci (tuple): Tuple containing the x and y coordinates of the foci
+		CellRoi (ij.gui.PolygonRoi): Roi defining the cell bounds
+
+	Returns:
+		float: Distance of the foci to the edge of the roi
+		ij.gui.Line: Line roi used to determine this value
+	"""	
+
+	# Coordinates must be floats for the containsPoint function
 	End_X, End_Y = float(Foci[0]), float(Foci[1])
+	# Starts distance at 0
 	distance = 0
+	# Will iterate through increasing distances until the line
+	# end coordinate is no longer contained within the roi
 	while CellRoi.containsPoint(End_X, End_Y):
 		distance += 1
 		End_X, End_Y = getLineEndCoords(End_X, End_Y, distance, Angle)
+	# Generates a line roi from the foci to the edge of the cell roi
 	PoleRoi = Line(Foci[0], Foci[1], End_X, End_Y)
+	# Sets the width to 1 pixel
 	PoleRoi.setStrokeWidth(1)
 	return distance, PoleRoi
 
 def getPoleDistance(Angle, CellFoci, CellRoi):
+	"""Gets the distance from the foci to the cell poles
+
+	Args:
+		Angle (int): Angle of the width measurement line
+		CellFoci (tuple): Tuple containing the x and y coordinates of the foci
+		CellRoi (ij.gui.PolygonRoi): Roi defining the cell bounds
+
+	Returns:
+		float: Distance of the foci to the edge of the roi
+		ij.gui.Line: Line roi used to determine this value
+	"""	
+
+	# Gets the distance from the pole in one direction
 	PoleDistance_1, PoleRoi_1 = distanceToRoiEdge(
 		Angle - 90, 
 		CellFoci, 
 		CellRoi
 	)
+	# Gets the distance from the pole in the other direction
 	PoleDistance_2, PoleRoi_2 = distanceToRoiEdge(
 		Angle + 90, 
 		CellFoci, 
 		CellRoi
 	)
-	
+	# Will return the shortest distance 
+	# and the line roi used to determine it
 	if PoleDistance_1 < PoleDistance_2:
 		return PoleDistance_1, PoleRoi_1
 	else:
 		return PoleDistance_2, PoleRoi_2
 
-def getFociFocusValues(Image, Foci, Radius):
+def getFociFocusValues(Image, Foci, Radius, Pixel_Scale):
+	"""Gets values to determine how in focus a foci is
+
+	Args:
+		Image (ij.ImagePlus): Image to be analysed
+		Foci (tuple): Tuple containing the x and y coordinates of the foci
+		Radius (float): Expected radius of the foci in pixels
+		Pixel_Scale (float): Pixel scale of the image in microns per pixel
+
+	Returns:
+		float: Mean full width half maximum of the foci
+		float: Mean standard deviation of the full width 
+			half maximum of the foci
+		float: Mean R^2 value of the foci
+		float: Mean standard deviation of the residuals of the foci
+		float: Mean sum of squared residuals of the foci
+	"""	
+	
+	# Initialising lists to store values
 	FullWidHMax_List = []
 	R_Squared_List = []
 	SDevRes_List = []
 	ResSumSquared_List = []
+	# Iterates through angles from 0 to 150 in 30 degree increments
+	# Will result in 6 measurements of the foci
 	for angle in range(0, 151, 30): # 151 as 0 == 180
+		# Gets start coordinates
 		Start_X, Start_Y = getLineEndCoords(
 			Foci[0], 
 			Foci[1], 
 			Radius, 
 			angle
 		)
+		# Gets end coordinates
 		End_X, End_Y = getLineEndCoords(
 			Foci[0], 
 			Foci[1], 
 			Radius, 
 			angle + 180
 		)
+		# Generates a line roi from the start to end coordinates
 		LineRoi = Line(Start_X, Start_Y, End_X, End_Y)
+		# Sets the width to 3 pixels to get a smoother profile
 		LineRoi.setStrokeWidth(3)
+		# Gets the full width half maximum of the foci for this angle
 		Parameters, FullWidHMax, R_Squared, SDevRes = fullWidthHalfMax(
 			Image, 
 			LineRoi
 		)
-		FullWidHMax_List.append(FullWidHMax * PixelScale)
+		# Adds the values to the lists
+		FullWidHMax_List.append(FullWidHMax * Pixel_Scale)
 		R_Squared_List.append(R_Squared)
 		SDevRes_List.append(SDevRes)
 		ResSumSquared_List.append(Parameters[4])
+	# Gets the mean values for full width half maximums
 	Mean_FWHM = sum(FullWidHMax_List)/len(FullWidHMax_List)
+	# Gets the standard deviation of the full width half maximums-------v
 	DeviationList = []
 	for FullWidthHalfMax in FullWidHMax_List:
 		DeviationList.append((FullWidthHalfMax - Mean_FWHM)**2)
 	StandardDeviation = Math.sqrt(sum(DeviationList)/len(DeviationList))
+	#-------------------------------------------------------------------^
+	# Gets the mean values for the other values
 	Mean_R_Squared = sum(R_Squared_List)/len(R_Squared_List)
 	Mean_SDevRes = sum(SDevRes_List)/len(SDevRes_List)
 	Mean_ResSumSquared = sum(ResSumSquared_List)/len(ResSumSquared_List)
@@ -1019,9 +1279,6 @@ def getFociFocusValues(Image, Foci, Radius):
 		Mean_ResSumSquared
 	 )
 
-# This function will take a foci and draw lines either side of the foci.
-# It will then call the FullWidthHalfMax function to get the 
-# distance of the foci from the membrane
 def fociMeasurements(
 		CellRoiList,
 		Cell_to_Points_Dict,
@@ -1029,14 +1286,28 @@ def fociMeasurements(
 		ImageList,
 		BackgroundList,
 		Radius):
-	"""Gets the distance of foci from the centre 
-	of the cell and from the cell membrane
-	
-	Takes a list of cell shape ROIs ([ij.gui.Roi]), a dicitonary 
-	containing foci in each cell using cell ROIs as keys and the 
-	membrane image (ij.ImagePlus) and returns a list of dictionaries 
-	with foci as keys and Cell width, distance from membrane, distance 
-	from cell centre and width line roi as values """
+	"""Gets distance measurements, focus measurements and
+		mean intensity measurements for each foci
+
+	Args:
+		CellRoiList ([ij.gui.Roi]): List of cell shape ROIs
+		Cell_to_Points_Dict (dict): Dictionary with cell ROIs as keys
+			and a list of contained foci coordinates as values
+		SpotDict (dict): Dictionary with foci coordinates as keys
+			and spot ROIs as values
+		ImageList ([ij.ImagePlus]): List of images to be analysed
+		BackgroundList ([float]): List of background values for each image
+			to be subtracted from the mean intensity of each foci
+		Radius (float): Expected radius of the foci in pixels
+
+	Returns:
+		dict: Dictionary with foci coordinates as keys and
+			width line ROIs as values
+		dict: Dictionary with foci coordinates as keys and
+			pole distance line ROIs as values
+		dict: Dictionary with foci coordinates as keys and
+			foci measurements as values
+	"""	
 
 	# Defines the dictionaries that will be returned.
 	DataDict = {}
@@ -1051,6 +1322,7 @@ def fociMeasurements(
 			CellRoi = CellRoiList[CellNumber]
 			# Iterates through foci within each cell roi
 			for CellFoci in Cell_to_Points_Dict[CellRoi]:
+				# Gets the distance measurements
 				(CellWidth, 
 				MembraneDistance, 
 				CentreDistance, 
@@ -1061,15 +1333,18 @@ def fociMeasurements(
 					CellRoiList[CellNumber])
 				
 				# Checks that function was called successfully
+				# If not, skips to next foci
 				if not CellWidth:
 					continue
-
+				
+				# Gets the distance from the cell pole
 				PoleDistance, PoleRoi = getPoleDistance(
 					Angle, 
 					CellFoci, 
 					CellRoi
 				)
 
+				# Gets values for how in focus the foci is
 				(Mean_FWHM, 
 				StandardDeviation, 
 				Mean_R_Squared, 
@@ -1077,17 +1352,31 @@ def fociMeasurements(
 				Mean_ResSumSquared) = getFociFocusValues(
 					ImageList[1], 
 					CellFoci, 
-					Radius
+					Radius,
+					PixelScale
 				)
 				
+				# Adds the SpotRoi to the dictionary
 				SpotRoi = SpotDict[CellFoci]
 				MeanList = []
+				# Iterates through each image
 				for Index in range(0, len(ImageList)):
-					IntensityList = getRoiMeasurements(SpotRoi, ImageList[Index], ["Mean", "Max"])
+					# Gets the mean and max intensity of the foci
+					IntensityList = getRoiMeasurements(
+						SpotRoi, 
+						ImageList[Index], ["Mean", "Max"]
+					)
+					# Checks if any pixels are overexposed
+					# If so, sets the mean intensity to infinity
 					if IntensityList[1] == 65535:
 						IntensityList[0] = float("inf")
-					MeanList.append(IntensityList[0] - BackgroundList[Index])
-
+					# Subtracts the background from the mean intensity
+					# and adds it to the list
+					MeanList.append(
+						IntensityList[0] 
+						- BackgroundList[Index]
+					)
+				# Adds the data to the dictionary
 				DataDict[CellFoci] = [
 					CellWidth, 
 					MembraneDistance, 
@@ -1102,7 +1391,7 @@ def fociMeasurements(
 					Mean_SDevRes, 
 					Mean_ResSumSquared
 				]
-
+				# Adds the line rois to their dictionarys
 				WidthLineDict[CellFoci] = LineRoi
 				EdgeDict[CellFoci] = PoleRoi
 		# Exception called if cell has no foci 
@@ -1110,13 +1399,57 @@ def fociMeasurements(
 			continue
 	return WidthLineDict, EdgeDict, DataDict
 
+def saveFociRoi(CellRoiList, Cell_to_Points_Dict, File_Path):
+	"""Saves the foci in the provided dictionary as roi
+
+	Args:
+		CellRoiList ([ij.gui.Roi]): List containing cell rois
+		Cell_to_Points_Dict (dict): Dictionary containing cell roi as key and
+			list of points contained within the cell as value
+		File_Path (str): Path to save the roi
+	"""	
+
+	# Creates an RoiManager Instance
+	Roi_Manger = RoiManager(True)
+	# Uses the list so can maintain this order going forward
+	for AnalysedRoi in CellRoiList:
+		# Sets the name of the roi to match the cell roi name
+		CellRoiName = AnalysedRoi.getName()
+		# If the cell has no foci then will not save the PointRoi
+		try:
+			FociNumber = 0
+			# Will go through the foci found in the list entry 
+			# in the dictionary and add them to a single PointRoi
+			for CellFoci in Cell_to_Points_Dict[AnalysedRoi]:
+				# Creates an empty PointRoi obj
+				SaveRoi = PointRoi(CellFoci[0], CellFoci[1])
+				SaveRoi.setName(CellRoiName + "-Foci_" + str(FociNumber + 1))
+				# Adds the point to the roi manager
+				Roi_Manger.addRoi(SaveRoi)
+				FociNumber += 1
+		# If the cell has no foci then will not save the PointRoi
+		except(KeyError):
+			pass
+	# Saves the roi as a zip file using the image filename 
+	Roi_Manger.save(File_Path)
+	Roi_Manger.close()
+
 def saveRoiDictionary(
 		CellRoiList, 
 		Cell_to_Points_Dict, 
 		RoiDictionary, 
 		File_Path):
 	"""Saves the roi contained within a dictionary 
-	which has point objects as keys"""
+
+	Args:
+		CellRoiList ([ij.gui.Roi]): List containing cell rois
+		Cell_to_Points_Dict (dict): Dictionary containing cell roi as key and
+			list of points contained within the cell as value
+		RoiDictionary (dict): Dictionary containing the foci as key and the
+			roi as value
+		File_Path (str): Save path for the rois
+	"""	
+
 	# Creates an RoiManager Instance
 	Roi_Manger = RoiManager(True)
 	# Uses the list so can maintain this order going forward
@@ -1153,45 +1486,99 @@ def saveData(
 		Cell_to_Points_Dict, 
 		OutputDictionary, 
 		CellPropertiesDict,
+		MembraneCellMeans,
 		NucleoidCellMeans, 
 		QualityDict):
+	"""Saves the data from the analysis
+
+	Args:
+		ResultsFilename (str): Filepath for the results file
+		OutputTable (ij.measure.ResultsTable): Results table 
+			used to save the data
+		ImageName (str): Filename of the current image
+		CellRoiList ([ij.gui.Roi]): List containing cell rois
+		Cell_to_Points_Dict (dict): Dictionary containing cell roi as key and
+			list of points contained within the cell as value
+		OutputDictionary (dict): Dictionary containing the foci as key and the
+			list of data as value
+		CellPropertiesDict (dict): Dictionary containing the cell roi as key
+			and the list of cell properties as value [Area, Mean, Length]
+		NucleoidCellMeans (dict): Dictionary containing the cell roi as key
+			and the mean nucleoid intensity as value
+		QualityDict (dict): Dictionary containing the foci as key and the
+			the trackmate quality of the foci as value
+	"""	
+
 	# Uses the list so can maintain this order going forward
 	for AnalysedRoi in CellRoiList:
 		CellRoiName = AnalysedRoi.getName()
-		# If the cell has no foci then will not save the PointRoi
+		# If the cell has no foci then will not add to the results table
 		try:
+			# Gets the number of foci in the cell
 			FociPerCell = len(Cell_to_Points_Dict[AnalysedRoi])
 			# Will go through the foci found in
 			# the list entry in the dictionary
 			for FociNumber in range(0, FociPerCell):
+				# Gets the current indexes foci
 				CellFoci = Cell_to_Points_Dict[AnalysedRoi][FociNumber]
-				CellWidth = OutputDictionary[CellFoci][0] * 0.065
-				MembraneDistance = OutputDictionary[CellFoci][1] * 0.065
+				# Width of the cell at this point adjusted for pixel scale
+				CellWidth = OutputDictionary[CellFoci][0] * PixelScale
+				# Distance from the membrane adjusted for pixel scale
+				MembraneDistance = OutputDictionary[CellFoci][1] * PixelScale
+				# Distance from the membrane normalised against cell width
 				RelativeMembraneDistance = MembraneDistance/(CellWidth/2)
-				CentreDistance = OutputDictionary[CellFoci][2] * 0.065
+				# Distance from the centre of the cell adjusted for pixel scale
+				CentreDistance = OutputDictionary[CellFoci][2] * PixelScale
+				# Distance from the centre of the cell normalised against cell width
 				RelativeCentreDistance = CentreDistance/(CellWidth/2)
-				try:
-					PoleDistance = OutputDictionary[CellFoci][3] * 0.065
-				except TypeError:
-					PoleDistance = OutputDictionary[CellFoci][3]
+				# Distance from the pole of the cell adjusted for pixel scale
+				PoleDistance = OutputDictionary[CellFoci][3] * PixelScale
+				# Mean intensity of the foci in the membrane channel
 				MembraneSpotMean = OutputDictionary[CellFoci][4]
+				# Mean intensity of the foci in the foci channel
 				FociSpotMean = OutputDictionary[CellFoci][5]
+				# Mean intensity of the foci in the nucleoid channel
 				NucleoidSpotMean = OutputDictionary[CellFoci][6]
+				# Mean intensity of the cell in the membrane channel
+				MembraneCellMean = MembraneCellMeans[AnalysedRoi][0]
+				# Max intensity of the cell in the membrane channel
+				MembraneCellMax = MembraneCellMeans[AnalysedRoi][3]
+				# Intensity of the foci relative to the cell mean intensity
+				MembraneRelativeIntensity = MembraneSpotMean/MembraneCellMean
+				# Intensity of the foci relative to the cell max intensity
+				MembranePercentage = MembraneSpotMean/MembraneCellMax
+				# Mean intensity of the cell in the nucleoid channel
 				NucleoidCellMean = NucleoidCellMeans[AnalysedRoi][0]
+				# Max intensity of the cell in the nucleoid channel
 				NucleoidCellMax = NucleoidCellMeans[AnalysedRoi][3]
+				# Intensity of the foci relative to the cell mean intensity
 				NucleoidRelativeIntensity = NucleoidSpotMean/NucleoidCellMean
+				# Intensity of the foci relative to the cell max intensity
 				NucleoidPercentage = NucleoidSpotMean/NucleoidCellMax
+				# Mean intensity of the cell in the foci channel
 				CellMean = CellPropertiesDict[AnalysedRoi][0]
+				# Area of the cell
 				CellArea = CellPropertiesDict[AnalysedRoi][1]
+				# Length of the cell based upon the ROI
 				CellLength = CellPropertiesDict[AnalysedRoi][2]
+				# Width of the cell based upon the ROI
+				CellRoiWidth = CellPropertiesDict[AnalysedRoi][4]
+				# Fold increase of the foci relative to the cell mean intensity
 				FoldIncrease = FociSpotMean/CellMean
+				# Trackmate quality of the foci
 				TrackMateQuality = QualityDict[CellFoci]
+				# Mean full width half max of the foci 
 				Mean_FWHM = OutputDictionary[CellFoci][7]
+				# Mean standard deviation of the foci full width half max
 				StandardDeviation = OutputDictionary[CellFoci][8]
+				# Mean R squared of the foci gaussian curve fitting
 				Mean_R_Squared = OutputDictionary[CellFoci][9]
+				# Mean residual sum of squares of the foci gaussian curve fitting
 				Mean_SDevRes = OutputDictionary[CellFoci][10]
+				# Mean residual sum of squares of the foci gaussian curve fitting
 				Mean_ResSumSquared = OutputDictionary[CellFoci][11]
 
+				# Adds the data to the results table
 				OutputTable.addValue("Image", ImageName)
 				OutputTable.addValue("Cell Number", CellRoiName)
 				OutputTable.addValue("Foci Number", FociNumber + 1)
@@ -1207,6 +1594,8 @@ def saveData(
 				OutputTable.addValue("Whole Cell Mean", CellMean)
 				OutputTable.addValue("Fold increase over Cell", FoldIncrease)
 				OutputTable.addValue("Foci Mean Intensity (Membrane)", MembraneSpotMean)
+				OutputTable.addValue("Membrane Relative Intensity", MembraneRelativeIntensity)
+				OutputTable.addValue("Membrane Percentage of Maximum", MembranePercentage)
 				OutputTable.addValue("Foci Mean Intensity (Nucleoid)", NucleoidSpotMean)
 				OutputTable.addValue("Nucleoid Relative Intensity", NucleoidRelativeIntensity)
 				OutputTable.addValue("Nucleoid Percentage of Maximum", NucleoidPercentage)
@@ -1216,10 +1605,13 @@ def saveData(
 				OutputTable.addValue("Mean Foci Gaussian StDev of Residuals", Mean_SDevRes)
 				OutputTable.addValue("Mean Foci Gaussian Residual Sum of Squares", Mean_ResSumSquared)
 				OutputTable.addValue("TrackMate Quality", TrackMateQuality)
-				OutputTable.addValue("Cell Area", CellArea)
-				OutputTable.addValue("Cell Length", CellLength)
+				OutputTable.addValue("Cell Roi Area", CellArea)
+				OutputTable.addValue("Cell Roi Length", CellLength)
+				OutputTable.addValue("Cell Roi Width", CellRoiWidth)
 				
+				# Saves the results table
 				OutputTable.save(ResultsFilename)
+				# Increments the counter so will save to a new row
 				Output_Table.incrementCounter()
 		except(KeyError):
 			pass
@@ -1229,11 +1621,16 @@ def saveData(
 ###################################################################################################
 ###################################################################################################
 
+# Apparently needed for TrackMate
 reload(sys)
 sys.setdefaultencoding('utf8')
 
+# Gets the path from the Java.io.File object
 Home_Path = Home_Folder.getPath()
+# Checks the inputs and gets the Ilastik project file, 
+# Path to the images and the list of nd2 files
 IlastikProject, Raw_Image_Path, FilteredImageList = checkInputs(Home_Path)
+# Channel numbers need to be reduced by 1 for zero indexing
 Memb_Chan -= 1
 Foci_Chan -= 1
 Nuc_Chan -= 1
@@ -1308,17 +1705,21 @@ for FutureDirectory in Dirs_To_Be_Made:
 		os.mkdir(hypothetical_path)
 #------------------------------------------------------------------^
 
-# This section sets up the results file for later use-v
-# Opens the results file
+# Gets the common filename to add it to the results file
+CommonFilename = filenameCommonality(FilteredImageList)
+# Checks if the common filename is empty, if not adds an underscore
+if len(CommonFilename) > 0:
+	CommonFilename += "_"
+# Generates the path where the results table will be saved
 Results_Filename = os.path.join(
 	Home_Path, 
 	Dirs_To_Be_Made[8], 
-	"Results.csv"
+	CommonFilename + "Results.csv"
 )
-
-#-----------------------------------------------------^
+# Initilises the results table used for output
 Output_Table = ResultsTable()
 
+# Goes through each image in the folder 
 for Image_Filename in FilteredImageList:
 	# Gets the path to the image
 	ImageFilepath = os.path.join(Raw_Image_Path, Image_Filename)
@@ -1395,6 +1796,9 @@ for Image_Filename in FilteredImageList:
 		Cell_Circularity, 
 		CellRoiFilePath
 	)
+	# If there are no cells in the image will skip to the next image
+	if len(Cell_Roi_List) < 1:
+		continue
 
 	# Gets the mean background intensity of the fluorescence channels
 	Foci_Background_Mean = getBackground(
@@ -1423,14 +1827,10 @@ for Image_Filename in FilteredImageList:
 		Cell_Roi_List, 
 		Roi_Enlargement
 	)
-	
-	# Saves the foci in the foci dict
-	FociSavePath = os.path.join(
-		Home_Path, 
-		Dirs_To_Be_Made[4], 
-		Filename_No_Extension + ".zip"
-	)
-	saveFociRoi(Cell_Roi_List, FociDict, FociSavePath)
+
+	# If there are no foci in the image will skip to the next image
+	if len(FociDict) < 1:
+		continue
 
 	# Collects all the measurements of the foci
 	WidthLineRoiDict, PoleLineRoiDict, Output_Dict = fociMeasurements(
@@ -1445,8 +1845,18 @@ for Image_Filename in FilteredImageList:
 													Nucleoid_Background_Mean],
 													ScaledRadius)
 
+	# Saving Rois--------------------------------------v
 
-	# Saves Spot Rois
+	# Saves foci Rois---------------------------------v
+	FociSavePath = os.path.join(
+		Home_Path, 
+		Dirs_To_Be_Made[4], 
+		Filename_No_Extension + ".zip"
+	)
+	saveFociRoi(Cell_Roi_List, FociDict, FociSavePath)
+	#-------------------------------------------------^
+	
+	# Saves Spot Rois-----------------v
 	SpotRoiSavepath = os.path.join(
 		Home_Path, 
 		Dirs_To_Be_Made[5], 
@@ -1458,7 +1868,8 @@ for Image_Filename in FilteredImageList:
 		Spot_Dict, 
 		SpotRoiSavepath
 	)
-	# Saves Width Rois
+	#---------------------------------^
+	# Saves Width Rois----------------v
 	WidthRoiSavepath = os.path.join(
 		Home_Path, 
 		Dirs_To_Be_Made[6], 
@@ -1470,7 +1881,8 @@ for Image_Filename in FilteredImageList:
 		WidthLineRoiDict, 
 		WidthRoiSavepath
 	)
-	# Saves Rois for distance from pole
+	#---------------------------------^
+	# Saves Rois for distance from pole-v
 	PoleRoiSavepath = os.path.join(
 		Home_Path, 
 		Dirs_To_Be_Made[7], 
@@ -1482,13 +1894,19 @@ for Image_Filename in FilteredImageList:
 		PoleLineRoiDict, 
 		PoleRoiSavepath
 	)
-
+	#-----------------------------------^
+	#--------------------------------------------------^
 	# Gets the mean values of each cell 
 	# to compare to focus intensity
 	FociCellMeanDictionary = getCellMeasurements(
 		Cell_Roi_List, 
 		Foci_Plus, 
 		Foci_Background_Mean
+	)
+	MembraneCellMeanDictionary = getCellMeasurements(
+		Cell_Roi_List,
+		Membrane_Plus,
+		Membrane_Background_Mean
 	)
 	NucleoidCellMeanDictionary = getCellMeasurements(
 		Cell_Roi_List,
@@ -1505,10 +1923,11 @@ for Image_Filename in FilteredImageList:
 		FociDict, 
 		Output_Dict, 
 		FociCellMeanDictionary,
+		MembraneCellMeanDictionary,
 		NucleoidCellMeanDictionary, 
 		Quality_Dict
 	)
-
+# Resets the measurements to the original settings
 AnalyzerClass.setMeasurements(OriginalMeasurements)
 
 
