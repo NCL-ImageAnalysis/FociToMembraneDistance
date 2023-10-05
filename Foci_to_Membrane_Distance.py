@@ -1158,14 +1158,16 @@ def distanceToRoiEdge(Angle, Foci, CellRoi):
 	"""	
 
 	# Coordinates must be floats for the containsPoint function
-	End_X, End_Y = float(Foci[0]), float(Foci[1])
+	Start_X, Start_Y = float(Foci[0]), float(Foci[1])
+	# Setting the end coordinates as same as start to begin with
+	End_X, End_Y = Start_X, Start_Y
 	# Starts distance at 0
 	distance = 0
 	# Will iterate through increasing distances until the line
 	# end coordinate is no longer contained within the roi
 	while CellRoi.containsPoint(End_X, End_Y):
 		distance += 1
-		End_X, End_Y = getLineEndCoords(End_X, End_Y, distance, Angle)
+		End_X, End_Y = getLineEndCoords(Start_X, Start_Y, distance, Angle)
 	# Generates a line roi from the foci to the edge of the cell roi
 	PoleRoi = Line(Foci[0], Foci[1], End_X, End_Y)
 	# Sets the width to 1 pixel
