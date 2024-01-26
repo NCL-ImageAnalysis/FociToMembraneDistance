@@ -46,7 +46,6 @@ from net.imglib2.img import ImagePlusAdapter
 from org.scijava.log import StderrLogService
 from org.scijava.service import ServiceHelper
 from org.ilastik.ilastik4ij.executors import PixelClassification
-from net.imglib2.img.display.imagej import ImageJFunctions
 # ImageJ2 Imports
 from net.imglib2.img.display.imagej import ImageJFunctions
 # Trackmate Imports
