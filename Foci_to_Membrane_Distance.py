@@ -77,6 +77,7 @@ WatershedBool = False
 # Analyze particles settings-v
 Cell_Sizes = "200-inf"
 Cell_Circularity = "0.00-1.00"
+# This is to catch any foci outside of the cell
 Roi_Enlargement = 3
 #----------------------------^
 
