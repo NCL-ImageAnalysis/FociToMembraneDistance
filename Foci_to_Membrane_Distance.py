@@ -1,5 +1,5 @@
 """
-<Authors> George Merces | Newcastle University | george.merces@newcastle.ac.uk
+<Authors> Dr George Merces | Newcastle University | george.merces@newcastle.ac.uk
 Dr James Grimshaw | Newcastle University | james.grimshaw@newcastle.ac.uk
 Dr Calum Jukes | Newcastle University | calum.jukes@newcastle.ac.uk </Authors>
 This Fiji macro runs in Jython and calculates the distance of spots 
