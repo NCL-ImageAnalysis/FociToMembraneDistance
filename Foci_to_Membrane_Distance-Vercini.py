@@ -76,7 +76,7 @@ WatershedBool = False
 
 # Analyze particles settings-v
 Cell_Sizes = "200-inf"
-Cell_Circularity = "0.00-1.00"
+Cell_Circularity = "0.80-1.00"
 # This is to catch any foci outside of the cell
 Roi_Enlargement = 3
 #----------------------------^
@@ -413,6 +413,7 @@ def segmentIlastikOutput(
 
 def localThreshold(MembraneImagePlus,
 				   BaseFilepath):
+	IJ.run(MembraneImagePlus, "8-bit","")
 	LocalThreshString = "method=Bernsen radius=15 parameter_1=0 parameter_2=0 white"
 	IJ.run(MembraneImagePlus, "Auto Local Threshold", LocalThreshString)
 	FileSaver(MembraneImagePlus).saveAsTiff(
