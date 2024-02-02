@@ -1133,7 +1133,6 @@ def lineRotationIterator(Image, Foci, CellRoi):
 	# Iterates through angles a given number of 
 	# degrees either side of the approximate angle
 	for Angle in range(AngleStart, AngleEnd):
-		print ("Angle: ", Angle)
 		# Gets the distance from the membrane to the foci,
 		# the distance from the centre of the cell to the foci
 		# and the line roi used to determine these values
