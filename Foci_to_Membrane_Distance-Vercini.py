@@ -413,14 +413,15 @@ def segmentIlastikOutput(
 
 def localThreshold(MembraneImagePlus,
 				   BaseFilepath):
-	IJ.run(MembraneImagePlus, "8-bit","")
+	ToThresh = MembraneImagePlus.duplicate()
+	IJ.run(ToThresh, "8-bit","")
 	LocalThreshString = "method=Bernsen radius=15 parameter_1=0 parameter_2=0 white"
-	IJ.run(MembraneImagePlus, "Auto Local Threshold", LocalThreshString)
-	FileSaver(MembraneImagePlus).saveAsTiff(
+	IJ.run(ToThresh, "Auto Local Threshold", LocalThreshString)
+	FileSaver(ToThresh).saveAsTiff(
 		BaseFilepath 
 		+ "_Semented-Membrane.tiff"
 	)
-	return MembraneImagePlus
+	return ToThresh
 
 def getCellRoi(
 		Binary_Image, 
@@ -1113,21 +1114,26 @@ def lineRotationIterator(Image, Foci, CellRoi):
 	# Currently using double width as starting point 
 	# for length of line
 	Width = RTable.getValue("Minor", 0) * 2
+	CentroidX = RTable.getValue("X", 0)
+	CentroidY = RTable.getValue("Y", 0)
+	CentroidLine = Line(Foci[0], Foci[1], CentroidX, CentroidY)
+	ElipseAngle = getRoiMeasurements(CentroidLine, Image, ["Angle"])[0]
 	# Needs to be set to something that is always 
 	# greater than all other widths found
 	TempWidth = float("inf")
 	# Gets the elipse angle, rounds it and gets the angle 90 degrees 
 	# to it which should be the approximate width angle
-	ElipseAngle = RTable.getValue("Angle", 0)
+	# ElipseAngle = RTable.getValue("Angle", 0)
 	if ElipseAngle < 0:
 		ElipseAngle = 360 + ElipseAngle
-	ApproxAngle = Math.round(ElipseAngle) + 90
+	ApproxAngle = Math.round(ElipseAngle)
 	# Sets the range of angles to iterate through
 	AngleStart = ApproxAngle - (Angle_Range/2)
 	AngleEnd = ApproxAngle + (Angle_Range/2) + 1
 	# Iterates through angles a given number of 
 	# degrees either side of the approximate angle
 	for Angle in range(AngleStart, AngleEnd):
+		print ("Angle: ", Angle)
 		# Gets the distance from the membrane to the foci,
 		# the distance from the centre of the cell to the foci
 		# and the line roi used to determine these values
@@ -1662,6 +1668,7 @@ if IlastikProject:
 		+ Measurements.ELLIPSE 
 		+ Measurements.AREA
 		+ Measurements.MIN_MAX
+		+ Measurements.CENTROID
 	)
 
 	# This section initialises variable and services------------------------------------v
