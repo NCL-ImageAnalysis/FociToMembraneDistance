@@ -107,32 +107,32 @@ def checkInputs(HomePath):
 	"""	
 
 	# Checks that the path to the ilastik.exe file is correct
-	if IlastikExe.exists() == False:
-		IJ.error(
-			"No ilastik.exe file found in given location. \
-			Please input into macro settings"
-		)
-		return False, False, False
+	# if IlastikExe.exists() == False:
+	# 	IJ.error(
+	# 		"No ilastik.exe file found in given location. \
+	# 		Please input into macro settings"
+	# 	)
+	# 	return False, False, False
 	
 	# Gets the ilastik project file from the home folder and---------------v
 	# returns it as a Java file object
 
 	# Gets all the files in the home folder
 	HomeFiles = os.listdir(HomePath)
-	# Creates a regex object to search for .ilp files
-	ilp_re_Obj = re.compile(r'\.ilp$', flags=re.IGNORECASE)
-	# Filters the list of files to only include .ilp files
-	IlastikProjectFiles = filter(ilp_re_Obj.search, HomeFiles)
-	# Checks that exactly one ilastik project is present
-	if len(IlastikProjectFiles) != 1:
-		if len(IlastikProjectFiles) > 1:
-			IJ.error("Multiple Ilastik project files detected")
-		else:
-			IJ.error("No Ilastik project file detected")
-		return False, False, False
-	# Converts the Ilastik project file into a Java File object
-	ProjectFilePath = os.path.join(HomePath, IlastikProjectFiles[0])
-	IlastikProjectFile = File(ProjectFilePath)
+	# # Creates a regex object to search for .ilp files
+	# ilp_re_Obj = re.compile(r'\.ilp$', flags=re.IGNORECASE)
+	# # Filters the list of files to only include .ilp files
+	# IlastikProjectFiles = filter(ilp_re_Obj.search, HomeFiles)
+	# # Checks that exactly one ilastik project is present
+	# if len(IlastikProjectFiles) != 1:
+	# 	if len(IlastikProjectFiles) > 1:
+	# 		IJ.error("Multiple Ilastik project files detected")
+	# 	else:
+	# 		IJ.error("No Ilastik project file detected")
+	# 	return False, False, False
+	# # Converts the Ilastik project file into a Java File object
+	# ProjectFilePath = os.path.join(HomePath, IlastikProjectFiles[0])
+	# IlastikProjectFile = File(ProjectFilePath)
 	#----------------------------------------------------------------------^
 
 	# Checks that the channel numbers are not the same---v
@@ -169,7 +169,7 @@ def checkInputs(HomePath):
 		return False, False, False
 	#---------------------------------------------------------------------^
 
-	return IlastikProjectFile, RawImagePath, ImageList
+	return None, RawImagePath, ImageList
 
 def filenameCommonality(FileList):
 	"""Gets the common substring of a list of strings
@@ -1650,309 +1650,309 @@ Home_Path = Home_Folder.getPath()
 # Path to the images and the list of nd2 files
 IlastikProject, Raw_Image_Path, FilteredImageList = checkInputs(Home_Path)
 # Will only proceed if the inputs are valid
-if IlastikProject:
-	# Channel numbers need to be reduced by 1 for zero indexing
-	Memb_Chan -= 1
-	Foci_Chan -= 1
-	Nuc_Chan -= 1
-	# Converts radius from microns to pixels
-	ScaledRadius = (Foci_Diameter/PixelScale)/2
 
-	# This section sets the measurements that will be used
-	AnalyzerClass = Analyzer()
-	# Gets original measurements to reset later
-	OriginalMeasurements = AnalyzerClass.getMeasurements()
-	# Sets the measurements to be used
-	AnalyzerClass.setMeasurements(
-		Measurements.MEAN 
-		+ Measurements.ELLIPSE 
-		+ Measurements.AREA
-		+ Measurements.MIN_MAX
-		+ Measurements.CENTROID
-	)
+# Channel numbers need to be reduced by 1 for zero indexing
+Memb_Chan -= 1
+Foci_Chan -= 1
+Nuc_Chan -= 1
+# Converts radius from microns to pixels
+ScaledRadius = (Foci_Diameter/PixelScale)/2
 
-	# This section initialises variable and services------------------------------------v
-	# that will be needed repeatedly.
+# This section sets the measurements that will be used
+AnalyzerClass = Analyzer()
+# Gets original measurements to reset later
+OriginalMeasurements = AnalyzerClass.getMeasurements()
+# Sets the measurements to be used
+AnalyzerClass.setMeasurements(
+	Measurements.MEAN 
+	+ Measurements.ELLIPSE 
+	+ Measurements.AREA
+	+ Measurements.MIN_MAX
+	+ Measurements.CENTROID
+)
 
-	# This gets a helper class that will 
-	# aquire instances of different services
-	Con = Context()
-	Helper = ServiceHelper(Con)
+# This section initialises variable and services------------------------------------v
+# that will be needed repeatedly.
 
-	# These next statements inputs a class which lets you load
-	# their respective services (may act as singletons)
-	# Gets the service for the status bar
-	Status = Helper.loadService(DefaultStatusService)
+# This gets a helper class that will 
+# aquire instances of different services
+# Con = Context()
+# Helper = ServiceHelper(Con)
 
-	# Gets the service for the log window
-	Logs = Helper.loadService(StderrLogService)
+# # These next statements inputs a class which lets you load
+# # their respective services (may act as singletons)
+# # Gets the service for the status bar
+# Status = Helper.loadService(DefaultStatusService)
 
-	# Constructs the pixel classification class using the ilastik.exe file, 
-	# the project file, the log service, the status service, 
-	# the number of allowed threads and number of allowed ram
-	Classification = PixelClassification(
-		IlastikExe, 
-		IlastikProject, 
-		Logs, 
-		Status, 
-		Threads, 
-		IlRam
-	)
+# # Gets the service for the log window
+# Logs = Helper.loadService(StderrLogService)
 
-	# Gets the classification type for the selected classification options
-	ClassificationType = Classification.PixelPredictionType.valueOf(IlastikOutputType)
-	# Initialises an instance of the Roi Manager that is not shown to the user
-	RoiMan = RoiManager(True)
-	#-----------------------------------------------------------------------------------^
+# # Constructs the pixel classification class using the ilastik.exe file, 
+# # the project file, the log service, the status service, 
+# # the number of allowed threads and number of allowed ram
+# Classification = PixelClassification(
+# 	IlastikExe, 
+# 	IlastikProject, 
+# 	Logs, 
+# 	Status, 
+# 	Threads, 
+# 	IlRam
+# )
 
-	# This section makes the directories that will be used later-------v
-	# Defines all the directorys to be made in the home folder
-	Dirs_To_Be_Made = [
-		"1-Chr_Abberation_Corrected", 
-		"2-Membrane_Probability", 
-		"3-Membrane_Segmented",  
-		"4-Cell_ROIs", 
-		"5-Foci_ROIs", 
-		"6-Spot_ROIs", 
-		"7-Width_ROIs", 
-		"8-Polar_ROIs", 
-		"9-Results"
-	]
+# # Gets the classification type for the selected classification options
+# ClassificationType = Classification.PixelPredictionType.valueOf(IlastikOutputType)
+# Initialises an instance of the Roi Manager that is not shown to the user
+RoiMan = RoiManager(True)
+#-----------------------------------------------------------------------------------^
 
-	# Iterates through the folders to be made and checks if they 
-	# already exist, if not will create them
-	for FutureDirectory in Dirs_To_Be_Made:
-		hypothetical_path = os.path.join(Home_Path, FutureDirectory)
-		if os.path.exists(hypothetical_path) == False:
-			os.mkdir(hypothetical_path)
-	#------------------------------------------------------------------^
+# This section makes the directories that will be used later-------v
+# Defines all the directorys to be made in the home folder
+Dirs_To_Be_Made = [
+	"1-Chr_Abberation_Corrected", 
+	"2-Membrane_Probability", 
+	"3-Membrane_Segmented",  
+	"4-Cell_ROIs", 
+	"5-Foci_ROIs", 
+	"6-Spot_ROIs", 
+	"7-Width_ROIs", 
+	"8-Polar_ROIs", 
+	"9-Results"
+]
 
-	# Gets the common filename to add it to the results file
-	CommonFilename = filenameCommonality(FilteredImageList)
-	# Checks if the common filename is empty, if not adds an underscore
-	if len(CommonFilename) > 0:
-		CommonFilename += "_"
-	# Generates the path where the results table will be saved
-	Results_Filename = os.path.join(
+# Iterates through the folders to be made and checks if they 
+# already exist, if not will create them
+for FutureDirectory in Dirs_To_Be_Made:
+	hypothetical_path = os.path.join(Home_Path, FutureDirectory)
+	if os.path.exists(hypothetical_path) == False:
+		os.mkdir(hypothetical_path)
+#------------------------------------------------------------------^
+
+# Gets the common filename to add it to the results file
+CommonFilename = filenameCommonality(FilteredImageList)
+# Checks if the common filename is empty, if not adds an underscore
+if len(CommonFilename) > 0:
+	CommonFilename += "_"
+# Generates the path where the results table will be saved
+Results_Filename = os.path.join(
+	Home_Path, 
+	Dirs_To_Be_Made[8], 
+	CommonFilename + "Results.csv"
+)
+# Initilises the results table used for output
+Output_Table = ResultsTable()
+
+# Goes through each image in the folder 
+for Image_Filename in FilteredImageList:
+	# Gets the path to the image
+	ImageFilepath = os.path.join(Raw_Image_Path, Image_Filename)
+	# Gets the filename without the extension so 
+	# .tiff and .roi filenames can be generated later
+	Filename_No_Extension = re.split(
+		r'\.nd2$', 
+		Image_Filename, 
+		flags=re.IGNORECASE)[0]
+	# BioFormats ImporterOptions constructor
+	Options = ImporterOptions()
+	# Selects the files path to be imported
+	Options.setId(ImageFilepath)
+	# Sets BioFormats to split channels
+	Options.setSplitChannels(True)
+	# Imports the image as an array of ImagePlus objects
+	Import = BF.openImagePlus(Options)
+	
+	# Creates the filepath that all chromatic 
+	# abberation corrected images will be using
+	ChromCorrectionBaseFilename = os.path.join(
 		Home_Path, 
-		Dirs_To_Be_Made[8], 
-		CommonFilename + "Results.csv"
+		Dirs_To_Be_Made[0], 
+		Filename_No_Extension
 	)
-	# Initilises the results table used for output
-	Output_Table = ResultsTable()
+	# Corrects for the chomatic abberation 
+	# between the red and the green channels
+	Membrane_Plus, Foci_Plus, Nucleoid_Plus = chromaticAbberationCorrection(
+		Import, 
+		RedChromAbCorr,
+		UVChromAbCorr, 
+		Memb_Chan, 
+		Foci_Chan,
+		Nuc_Chan,
+		Membrane_Channel_Colour, 
+		ChromCorrectionBaseFilename
+	)
 
-	# Goes through each image in the folder 
-	for Image_Filename in FilteredImageList:
-		# Gets the path to the image
-		ImageFilepath = os.path.join(Raw_Image_Path, Image_Filename)
-		# Gets the filename without the extension so 
-		# .tiff and .roi filenames can be generated later
-		Filename_No_Extension = re.split(
-			r'\.nd2$', 
-			Image_Filename, 
-			flags=re.IGNORECASE)[0]
-		# BioFormats ImporterOptions constructor
-		Options = ImporterOptions()
-		# Selects the files path to be imported
-		Options.setId(ImageFilepath)
-		# Sets BioFormats to split channels
-		Options.setSplitChannels(True)
-		# Imports the image as an array of ImagePlus objects
-		Import = BF.openImagePlus(Options)
-		
-		# Creates the filepath that all chromatic 
-		# abberation corrected images will be using
-		ChromCorrectionBaseFilename = os.path.join(
-			Home_Path, 
-			Dirs_To_Be_Made[0], 
-			Filename_No_Extension
-		)
-		# Corrects for the chomatic abberation 
-		# between the red and the green channels
-		Membrane_Plus, Foci_Plus, Nucleoid_Plus = chromaticAbberationCorrection(
-			Import, 
-			RedChromAbCorr,
-			UVChromAbCorr, 
-			Memb_Chan, 
-			Foci_Chan,
-			Nuc_Chan,
-			Membrane_Channel_Colour, 
-			ChromCorrectionBaseFilename
-		)
+	# Uses ilastik to generate a 
+	# probability map using the membrane channel
+	# IlastikImagePlus = generateMembraneProbability(
+	# 	Membrane_Plus, 
+	# 	Classification, 
+	# 	ClassificationType, 
+	# 	Filename_No_Extension, 
+	# 	os.path.join(Home_Path, Dirs_To_Be_Made[1])
+	# )
 
-		# Uses ilastik to generate a 
-		# probability map using the membrane channel
-		# IlastikImagePlus = generateMembraneProbability(
-		# 	Membrane_Plus, 
-		# 	Classification, 
-		# 	ClassificationType, 
-		# 	Filename_No_Extension, 
-		# 	os.path.join(Home_Path, Dirs_To_Be_Made[1])
-		# )
+	# Segments the cells based upon the 
+	# probability map generated by ilastik
+	BinaryFilePath = os.path.join(
+		Home_Path, 
+		Dirs_To_Be_Made[2], 
+		Filename_No_Extension
+	)
+	# MembraneBinary = segmentIlastikOutput(
+	# 	IlastikImagePlus, 
+	# 	Gaussian_BlurSigma, 
+	# 	ThresholdingMethod, 
+	# 	DilationPixels, 
+	# 	WatershedBool, 
+	# 	BinaryFilePath
+	# )
+	MembraneBinary = localThreshold(
+		Membrane_Plus,
+		BinaryFilePath
+	)
+	# Gets the rois from the segmented image along with a combined roi
+	CellRoiFilePath = os.path.join(
+		Home_Path, 
+		Dirs_To_Be_Made[3], 
+		Filename_No_Extension + ".zip"
+	)
+	Cell_Roi_List, MergedCells = getCellRoi(
+		MembraneBinary, 
+		Cell_Sizes, 
+		Cell_Circularity, 
+		CellRoiFilePath
+	)
+	# If there are no cells in the image will skip to the next image
+	if len(Cell_Roi_List) < 1:
+		continue
 
-		# Segments the cells based upon the 
-		# probability map generated by ilastik
-		BinaryFilePath = os.path.join(
-			Home_Path, 
-			Dirs_To_Be_Made[2], 
-			Filename_No_Extension
-		)
-		# MembraneBinary = segmentIlastikOutput(
-		# 	IlastikImagePlus, 
-		# 	Gaussian_BlurSigma, 
-		# 	ThresholdingMethod, 
-		# 	DilationPixels, 
-		# 	WatershedBool, 
-		# 	BinaryFilePath
-		# )
-		MembraneBinary = localThreshold(
-			Membrane_Plus,
-			BinaryFilePath
-		)
-		# Gets the rois from the segmented image along with a combined roi
-		CellRoiFilePath = os.path.join(
-			Home_Path, 
-			Dirs_To_Be_Made[3], 
-			Filename_No_Extension + ".zip"
-		)
-		Cell_Roi_List, MergedCells = getCellRoi(
-			MembraneBinary, 
-			Cell_Sizes, 
-			Cell_Circularity, 
-			CellRoiFilePath
-		)
-		# If there are no cells in the image will skip to the next image
-		if len(Cell_Roi_List) < 1:
-			continue
+	# Gets the mean background intensity of the fluorescence channels
+	Foci_Background_Mean = getBackground(
+		Foci_Plus, 
+		MergedCells, 
+		Roi_Enlargement
+	)
+	Membrane_Background_Mean = getBackground(
+		Membrane_Plus, 
+		MergedCells, 
+		Roi_Enlargement
+	)
+	Nucleoid_Background_Mean = getBackground(
+		Nucleoid_Plus,
+		MergedCells,
+		Roi_Enlargement
+	)
 
-		# Gets the mean background intensity of the fluorescence channels
-		Foci_Background_Mean = getBackground(
-			Foci_Plus, 
-			MergedCells, 
-			Roi_Enlargement
-		)
-		Membrane_Background_Mean = getBackground(
-			Membrane_Plus, 
-			MergedCells, 
-			Roi_Enlargement
-		)
-		Nucleoid_Background_Mean = getBackground(
-			Nucleoid_Plus,
-			MergedCells,
-			Roi_Enlargement
-		)
+	# Gets a dictionary which has the cell roi as a key with 
+	# a list of all of that cells foci as the value, 
+	# along with an roi containing all foci in the image
+	FociDict, Quality_Dict, Spot_Dict = getFoci(
+		Foci_Plus, 
+		ScaledRadius, 
+		TrackMate_Quality, 
+		Cell_Roi_List, 
+		Roi_Enlargement
+	)
 
-		# Gets a dictionary which has the cell roi as a key with 
-		# a list of all of that cells foci as the value, 
-		# along with an roi containing all foci in the image
-		FociDict, Quality_Dict, Spot_Dict = getFoci(
-			Foci_Plus, 
-			ScaledRadius, 
-			TrackMate_Quality, 
-			Cell_Roi_List, 
-			Roi_Enlargement
-		)
+	# If there are no foci in the image will skip to the next image
+	if len(FociDict) < 1:
+		continue
 
-		# If there are no foci in the image will skip to the next image
-		if len(FociDict) < 1:
-			continue
+	# Collects all the measurements of the foci
+	WidthLineRoiDict, PoleLineRoiDict, Output_Dict = fociMeasurements(
+													Cell_Roi_List, 
+													FociDict,
+													Spot_Dict,
+													[Membrane_Plus, 
+													Foci_Plus,
+													Nucleoid_Plus],
+													[Membrane_Background_Mean, 
+													Foci_Background_Mean,
+													Nucleoid_Background_Mean],
+													ScaledRadius)
 
-		# Collects all the measurements of the foci
-		WidthLineRoiDict, PoleLineRoiDict, Output_Dict = fociMeasurements(
-														Cell_Roi_List, 
-														FociDict,
-														Spot_Dict,
-														[Membrane_Plus, 
-														Foci_Plus,
-														Nucleoid_Plus],
-														[Membrane_Background_Mean, 
-														Foci_Background_Mean,
-														Nucleoid_Background_Mean],
-														ScaledRadius)
+	# Saving Rois--------------------------------------v
 
-		# Saving Rois--------------------------------------v
+	# Saves foci Rois---------------------------------v
+	FociSavePath = os.path.join(
+		Home_Path, 
+		Dirs_To_Be_Made[4], 
+		Filename_No_Extension + ".zip"
+	)
+	saveFociRoi(Cell_Roi_List, FociDict, FociSavePath)
+	#-------------------------------------------------^
+	
+	# Saves Spot Rois-----------------v
+	SpotRoiSavepath = os.path.join(
+		Home_Path, 
+		Dirs_To_Be_Made[5], 
+		Filename_No_Extension + ".zip"
+	)
+	saveRoiDictionary(
+		Cell_Roi_List, 
+		FociDict, 
+		Spot_Dict, 
+		SpotRoiSavepath
+	)
+	#---------------------------------^
+	# Saves Width Rois----------------v
+	WidthRoiSavepath = os.path.join(
+		Home_Path, 
+		Dirs_To_Be_Made[6], 
+		Filename_No_Extension + ".zip"
+	)
+	saveRoiDictionary(
+		Cell_Roi_List, 
+		FociDict, 
+		WidthLineRoiDict, 
+		WidthRoiSavepath
+	)
+	#---------------------------------^
+	# Saves Rois for distance from pole-v
+	PoleRoiSavepath = os.path.join(
+		Home_Path, 
+		Dirs_To_Be_Made[7], 
+		Filename_No_Extension + ".zip"
+	)
+	saveRoiDictionary(
+		Cell_Roi_List, 
+		FociDict, 
+		PoleLineRoiDict, 
+		PoleRoiSavepath
+	)
+	#-----------------------------------^
+	#--------------------------------------------------^
+	# Gets the mean values of each cell 
+	# to compare to focus intensity
+	FociCellMeanDictionary = getCellMeasurements(
+		Cell_Roi_List, 
+		Foci_Plus, 
+		Foci_Background_Mean
+	)
+	MembraneCellMeanDictionary = getCellMeasurements(
+		Cell_Roi_List,
+		Membrane_Plus,
+		Membrane_Background_Mean
+	)
+	NucleoidCellMeanDictionary = getCellMeasurements(
+		Cell_Roi_List,
+		Nucleoid_Plus,
+		Nucleoid_Background_Mean
+	)
 
-		# Saves foci Rois---------------------------------v
-		FociSavePath = os.path.join(
-			Home_Path, 
-			Dirs_To_Be_Made[4], 
-			Filename_No_Extension + ".zip"
-		)
-		saveFociRoi(Cell_Roi_List, FociDict, FociSavePath)
-		#-------------------------------------------------^
-		
-		# Saves Spot Rois-----------------v
-		SpotRoiSavepath = os.path.join(
-			Home_Path, 
-			Dirs_To_Be_Made[5], 
-			Filename_No_Extension + ".zip"
-		)
-		saveRoiDictionary(
-			Cell_Roi_List, 
-			FociDict, 
-			Spot_Dict, 
-			SpotRoiSavepath
-		)
-		#---------------------------------^
-		# Saves Width Rois----------------v
-		WidthRoiSavepath = os.path.join(
-			Home_Path, 
-			Dirs_To_Be_Made[6], 
-			Filename_No_Extension + ".zip"
-		)
-		saveRoiDictionary(
-			Cell_Roi_List, 
-			FociDict, 
-			WidthLineRoiDict, 
-			WidthRoiSavepath
-		)
-		#---------------------------------^
-		# Saves Rois for distance from pole-v
-		PoleRoiSavepath = os.path.join(
-			Home_Path, 
-			Dirs_To_Be_Made[7], 
-			Filename_No_Extension + ".zip"
-		)
-		saveRoiDictionary(
-			Cell_Roi_List, 
-			FociDict, 
-			PoleLineRoiDict, 
-			PoleRoiSavepath
-		)
-		#-----------------------------------^
-		#--------------------------------------------------^
-		# Gets the mean values of each cell 
-		# to compare to focus intensity
-		FociCellMeanDictionary = getCellMeasurements(
-			Cell_Roi_List, 
-			Foci_Plus, 
-			Foci_Background_Mean
-		)
-		MembraneCellMeanDictionary = getCellMeasurements(
-			Cell_Roi_List,
-			Membrane_Plus,
-			Membrane_Background_Mean
-		)
-		NucleoidCellMeanDictionary = getCellMeasurements(
-			Cell_Roi_List,
-			Nucleoid_Plus,
-			Nucleoid_Background_Mean
-		)
-
-		# Saves all outputs to the results file
-		saveData(
-			Results_Filename,
-			Output_Table, 
-			Filename_No_Extension, 
-			Cell_Roi_List, 
-			FociDict, 
-			Output_Dict, 
-			FociCellMeanDictionary,
-			MembraneCellMeanDictionary,
-			NucleoidCellMeanDictionary, 
-			Quality_Dict
-		)
-	# Resets the measurements to the original settings
-	AnalyzerClass.setMeasurements(OriginalMeasurements)
+	# Saves all outputs to the results file
+	saveData(
+		Results_Filename,
+		Output_Table, 
+		Filename_No_Extension, 
+		Cell_Roi_List, 
+		FociDict, 
+		Output_Dict, 
+		FociCellMeanDictionary,
+		MembraneCellMeanDictionary,
+		NucleoidCellMeanDictionary, 
+		Quality_Dict
+	)
+# Resets the measurements to the original settings
+AnalyzerClass.setMeasurements(OriginalMeasurements)
 
 
