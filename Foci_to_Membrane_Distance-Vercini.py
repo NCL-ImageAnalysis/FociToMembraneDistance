@@ -443,7 +443,7 @@ def getCellRoi(
 
 	# Defines analyse particles settings
 	AnalyzeParticlesSettings = (
-		"Size=" 
+		"size=" 
 		+ Cell_Size_Setting 
 		+ " circularity=" 
 		+ Cell_Circularity_Setting 
