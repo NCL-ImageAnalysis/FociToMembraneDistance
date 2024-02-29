@@ -1579,8 +1579,6 @@ if Raw_Image_Path:
 														Foci_Background_Mean],
 														ScaledRadius)
 
-		# Saving Rois--------------------------------------v
-
 		# Logging the number of foci successfully measured in the image
 		IJ.log(str(len(WidthLineRoiDict)) + " foci measured in " + Image_Filename)
 
@@ -1588,6 +1586,8 @@ if Raw_Image_Path:
 		if len(WidthLineRoiDict) < 1:
 			continue
 
+		# Saving Rois--------------------------------------v
+		
 		# Saves foci Rois---------------------------------v
 		FociSavePath = os.path.join(
 			Home_Path, 
@@ -1650,8 +1650,8 @@ if Raw_Image_Path:
 			Quality_Dict
 		)
 
-# Resets the measurements to the original settings
-AnalyzerClass.setMeasurements(OriginalMeasurements)
-IJ.log("Analysis Complete")
+	# Resets the measurements to the original settings
+	AnalyzerClass.setMeasurements(OriginalMeasurements)
+	IJ.log("Analysis Complete")
 
 
