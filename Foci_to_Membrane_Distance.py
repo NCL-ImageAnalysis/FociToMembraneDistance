@@ -442,13 +442,14 @@ def getCellRoi(
 	IJ.run(Binary_Image, "Analyze Particles...", AnalyzeParticlesSettings)
 	# Gets the Overlayed ROIs from analyze particles
 	Overlayed_Rois = Binary_Image.getOverlay()
+	# If no cells are found Overlayed_Rois will be None
+	if not Overlayed_Rois:
+		# If no cells are found will return an empty list
+		return [], None
 	# Takes the overlay and turns it into an array of ROI
 	CellRoiList = Overlayed_Rois.toArray()
 	# Removes this overlay to clean up the image
 	IJ.run(Binary_Image, "Remove Overlay", "")
-	if len(CellRoiList) < 1:
-		# If no cells are found will return an empty list
-		return [], None
 	# Initialises RoiManager but keeps it hidden from the user
 	Roi_Manger = RoiManager(True)
 	# Adds all the ROI to the ROI Manager
@@ -1723,8 +1724,12 @@ if IlastikProject:
 	# Initilises the results table used for output
 	Output_Table = ResultsTable()
 
+	if len(FilteredImageList) < 0:
+		IJ.error("No images found in the folder")
+
 	# Goes through each image in the folder 
 	for Image_Filename in FilteredImageList:
+		IJ.log("Analysing " + Image_Filename)
 		# Gets the path to the image
 		ImageFilepath = os.path.join(Raw_Image_Path, Image_Filename)
 		# Gets the filename without the extension so 
@@ -1749,6 +1754,11 @@ if IlastikProject:
 			Dirs_To_Be_Made[0], 
 			Filename_No_Extension
 		)
+
+		if len(Import) < Memb_Chan or len(Import) < Foci_Chan or len(Import) < Nuc_Chan:
+			IJ.error("Not enough channels in the image")
+			continue
+
 		# Corrects for the chomatic abberation 
 		# between the red and the green channels
 		Membrane_Plus, Foci_Plus, Nucleoid_Plus = chromaticAbberationCorrection(
@@ -1800,6 +1810,10 @@ if IlastikProject:
 			Cell_Circularity, 
 			CellRoiFilePath
 		)
+
+		# Logging the number of cells found in the image
+		IJ.log(str(len(Cell_Roi_List)) + " cells detected in " + Image_Filename)
+
 		# If there are no cells in the image will skip to the next image
 		if len(Cell_Roi_List) < 1:
 			continue
@@ -1832,6 +1846,9 @@ if IlastikProject:
 			Roi_Enlargement
 		)
 
+		# Logging the number of foci found in the image
+		IJ.log(str(len(FociDict)) + " foci detected in " + Image_Filename)
+
 		# If there are no foci in the image will skip to the next image
 		if len(FociDict) < 1:
 			continue
@@ -1849,6 +1866,13 @@ if IlastikProject:
 														Nucleoid_Background_Mean],
 														ScaledRadius)
 
+		# Logging the number of foci successfully measured in the image
+		IJ.log(str(len(WidthLineRoiDict)) + " foci measured in " + Image_Filename)
+
+		# If no foci were successfully measured will skip to the next image
+		if len(WidthLineRoiDict) < 1:
+			continue		
+		
 		# Saving Rois--------------------------------------v
 
 		# Saves foci Rois---------------------------------v
@@ -1933,5 +1957,5 @@ if IlastikProject:
 		)
 	# Resets the measurements to the original settings
 	AnalyzerClass.setMeasurements(OriginalMeasurements)
-
+	IJ.log("Analysis Complete")
 
