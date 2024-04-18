@@ -822,20 +822,38 @@ def fullWidthHalfMax(Image, LineRoi):
 	return Parameters, FullWidHMax, R_Squared, SDevRes
 
 def getPeakCentre(Y_Values, RollingAvg):
+	"""Gets the peak centre of a line roi
+
+	Args:
+		Y_Values ([double]): Y values of a fluorescence intensity profile
+		RollingAvg (int): Number of points to average for peak centre
+
+	Returns:
+		int: Index to the peak centre
+	"""
+	
 	# Ensures the rolling average is odd
 	if RollingAvg % 2 == 0:
 		RollingAvg += 1
+	# Initialises variables
 	TempAvg = 0
 	PeakCentre = None
+	# Iterates through each point in the profile
 	for index in range(0, len(Y_Values)):
+		# Sets the lower and upper bounds for the rolling average
 		LowerBound = index - Math.round((RollingAvg - 1)/2)
 		UpperBound = index + Math.round((RollingAvg - 1)/2)
+		# Ensures the bounds are within the profile
 		if LowerBound < 0:
 			LowerBound = 0
 		if UpperBound > len(Y_Values):
 			UpperBound = len(Y_Values)
+		# Gets the subset of the profile to average
 		Subset = Y_Values[LowerBound:UpperBound]
+		# Averages the subset
 		Avg = sum(Subset)/len(Subset)
+		# If the average is greater than the current peak centre
+		# will set the peak centre to this index
 		if Avg > TempAvg:
 			TempAvg = Avg
 			PeakCentre = index
