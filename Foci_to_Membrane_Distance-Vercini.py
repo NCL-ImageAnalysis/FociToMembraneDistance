@@ -15,8 +15,8 @@ and a folder within the selected home folder called "Raw_Images" containg nd2 fi
 #@ String (label="Membrane Channel Colour:", choices={"Green", "Red"}) Membrane_Channel_Colour
 #@ Integer (label="Membrane Channel:") Memb_Chan
 #@ Integer (label="Foci Channel:") Foci_Chan
-#@ Float (label="Membrane Gaussian R^2 cutoff", style="format:#####.#####") R2_Cutoff
-#@ int (label="FWHM Cell Width Modifier (pixels):") FWHM_Modifier
+#@ Integer (label="Membrane Distance Modifier (pixels):") MD_Modifier
+#@ Integer (label="Membrane peak Rolling Average (Odd Number):") Rolling_Avg
 #--------------------------------------------------------------------------------------------------------------^
 
 # Python Imports
@@ -755,23 +755,18 @@ def getLineEndCoords(X, Y, Length, Angle):
 	End_Y = abs(-Y + (Length * Math.sin(Radian)))
 	return End_X, End_Y
 
-
-def fullWidthHalfMax(Image, LineRoi):
-	"""Gets the full width half maximum of a line roi
+def getLineProfile(Image, LineRoi):
+	"""Gets the fluorescence intensity profile of a line roi
 
 	Args:
 		Image (ij.ImagePlus): Image to be measured
 		LineRoi (ij.gui.Line): Line to be used for intensity profile
 
 	Returns:
-		[float]: Parameters of the gaussian curve:
-			[minimum, maximum, centre of the peak, 
-			standard deviation, sum of residuals squared]
-		float: Full width half maximum of the gaussian curve
-		float: R^2 value of the gaussian curve
-		float: Sum of residuals squared of the gaussian curve
-	"""	
-	
+		[float]: X values of the profile
+		[float]: Y values of the profile
+	"""
+
 	# Adds the line roi to the image
 	Image.setRoi(LineRoi)
 	# Generates the fluorescence intesnsity profile
@@ -788,8 +783,28 @@ def fullWidthHalfMax(Image, LineRoi):
 	X_Double = []
 	for Value in X_Values:
 		X_Double.append(Double(Value))
+	return X_Double, Y_Values
+	
+
+def fullWidthHalfMax(Image, LineRoi):
+	"""Gets the full width half maximum of a line roi
+
+	Args:
+		Image (ij.ImagePlus): Image to be measured
+		LineRoi (ij.gui.Line): Line to be used for intensity profile
+
+	Returns:
+		[float]: Parameters of the gaussian curve:
+			[minimum, maximum, centre of the peak, 
+			standard deviation, sum of residuals squared]
+		float: Full width half maximum of the gaussian curve
+		float: R^2 value of the gaussian curve
+		float: Sum of residuals squared of the gaussian curve
+	"""
+
+	X_Values, Y_Values = getLineProfile(Image, LineRoi)
 	# Fits the gaussian curve
-	Fit = CurveFitter(X_Double, Y_Values)
+	Fit = CurveFitter(X_Values, Y_Values)
 	Fit.doFit(Fit.GAUSSIAN)
 	# Gets the parameters from the fit as a double array
 	# Parameters are: minimum, maximum, centre of the peak, 
@@ -806,150 +821,40 @@ def fullWidthHalfMax(Image, LineRoi):
 	Image.resetRoi()
 	return Parameters, FullWidHMax, R_Squared, SDevRes
 
-def distanceFromMembrane(Angle, 
-			Foci,
-			Image, 
-			Length, 
-			R2Cutoff, 
-			FWHMModifier):
-	"""Gets membrane width, distance of foci 
-		from the membrane and the cell centre
+def getPeakCentre(Y_Values, RollingAvg):
+	# Ensures the rolling average is odd
+	if RollingAvg % 2 == 0:
+		RollingAvg += 1
+	TempAvg = 0
+	PeakCentre = None
+	for index in range(0, len(Y_Values)):
+		LowerBound = index - Math.round((RollingAvg - 1)/2)
+		UpperBound = index + Math.round((RollingAvg - 1)/2)
+		if LowerBound < 0:
+			LowerBound = 0
+		if UpperBound > len(Y_Values):
+			UpperBound = len(Y_Values)
+		Subset = Y_Values[LowerBound:UpperBound]
+		Avg = sum(Subset)/len(Subset)
+		if Avg > TempAvg:
+			TempAvg = Avg
+			PeakCentre = index
+	return PeakCentre
 
-	Args:
-		Angle (float): Angle of the line
-		Foci (tuple): X and Y coordinates of the foci
-		Image (ij.ImagePlus): Image to be measured
-		Length (float): Initial length of the line
-		R2Cutoff (float): Minimum R^2 value of the gaussian fit
-		FWHMModifier (int): Amount to offset the full width half maximum
-
-	Returns:
-		float: Full width half maximum of the gaussian curve
-		float: Distance from the membrane to the foci
-		float: Distance from the centre of the cell to the foci
-		ij.gui.line: Line roi matching the membrane width
-	"""	
-
-	# Need to make sure when getting the other side 
-	# of the line the angle isnt going over 360 degrees 
-	if Angle > 180:
-		ModdedAngle = Angle - 180
-	else:
-		ModdedAngle = Angle + 180
-	# Gets one side of the extended line 
-	Start_X, Start_Y = getLineEndCoords(Foci[0], Foci[1], Length, Angle)
-	# Gets the other side of the extended line
-	End_X, End_Y = getLineEndCoords(Foci[0], Foci[1], Length, ModdedAngle)
-	# Generates the line roi
-	TempLineRoi = Line(Start_X, Start_Y, End_X, End_Y)
-	# Sets the width to 3 pixels wide so there is some 
-	# averaging on the fluorescence intensity profile
-	TempLineRoi.setStrokeWidth(3)
-	# Gets the parameters of a gaussian fit (minimum, maximum, 
-	# centre of the peak, standard deviation, sum of residuals squared),
-	# the full width half maximum, the R^2 value and 
-	# the standard deviation of residuals
-	Parameters, FullWidHMax, R_Squared, SDevRes = fullWidthHalfMax(
-		Image, 
-		TempLineRoi
-	)
-	# Offsets the full width half maximum by given amount
-	ModifiedFWHM = FullWidHMax + FWHMModifier
-	# Finds the distance from the start of the line 
-	# to the start of the membrane
-	DistanceToMembraneStart = Parameters[2] - (ModifiedFWHM/2)
-	# Gets the coordinates of the start of the membrane
-	Membrane_Start_X, Membrane_Start_Y = getLineEndCoords(
-		Start_X, 
-		Start_Y, 
-		DistanceToMembraneStart, 
-		ModdedAngle
-	)
-	# Gets the coordinates of the centre peak of the curve
-	Membrane_Centre_X, Membrane_Centre_Y = getLineEndCoords(
-		Membrane_Start_X, 
-		Membrane_Start_Y, 
-		ModifiedFWHM/2, 
-		ModdedAngle
-	)
-	# Gets the coordinates of the end of the membrane
-	Membrane_End_X, Membrane_End_Y = getLineEndCoords(
-		Membrane_Start_X, 
-		Membrane_Start_Y, 
-		ModifiedFWHM, 
-		ModdedAngle
-	)
-	# Generates the line roi for this  membrane  spanning line
-	MembraneLineRoi = Line(
-		Membrane_Start_X, 
-		Membrane_Start_Y, 
-		Membrane_End_X, 
-		Membrane_End_Y
-	)
-	# Sets the width of this line to 2 pixels so can 
-	# check if it contains the foci properly
-	MembraneLineRoi.setStrokeWidth(2)
-	# Distance of the foci from the start of the membrane
-	startdist = distanceBetweenPoints(
-		Membrane_Start_X, 
-		Membrane_Start_Y, 
-		Foci[0], 
-		Foci[1]
-	)
-	# Distance of the foci from the centre of the cell
-	centredist = distanceBetweenPoints(
-		Membrane_Centre_X, 
-		Membrane_Centre_Y, 
-		Foci[0], 
-		Foci[1]
-	)
-	# Distance of the foci from the end of the membrane 
-	enddist = distanceBetweenPoints(
-		Membrane_End_X, 
-		Membrane_End_Y, 
-		Foci[0], 
-		Foci[1]
-	)
-	# Converts the line roi to an area roi so can check if
-	# it contains the foci
-	MembraneAreaRoi = MembraneLineRoi.convertLineToArea(MembraneLineRoi)
-	# Checks whether the line has the shortest distance found so far, 
-	# if the R^2 of the fit is greater than a certain thresholding 
-	# and that it contains the foci
-	Contains = MembraneAreaRoi.containsPoint(Foci[0], Foci[1])
-	if R_Squared < R2Cutoff or not Contains:
-		# Returns width as infinity if did not meet requirements
-		return float("inf"), None, None, None
-	# Checks whether the start or end of 
-	# the membrane is closer to the foci
-	if startdist < enddist:
-		shortestdist = startdist
-		longestdist = enddist
-	else:
-		shortestdist = enddist
-		longestdist = startdist
-	# Checks whether the foci is outside the membrane limits
-	# and if so sets the distance to negative
-	if longestdist > ModifiedFWHM:
-		shortestdist = -shortestdist
-
-	return ModifiedFWHM, shortestdist, centredist, MembraneLineRoi
-
-def lineRotationIterator(Image, Foci, CellRoi):
-	"""Gets the shortest line that can be drawn across 
-		the width of a cell for a given point
+def centroidToCellEdge(Image, Foci, CellRoi, RollingAvg, DistanceModifier):
+	"""Gets the distance of the foci to the membrane edge
 
 	Args:
 		Image (ij.ImagePlus): Image to be analysed
 		Foci (tuple): Tuple containing the x and y coordinates of the foci
 		CellRoi (ij.gui.PolygonRoi): Roi defining the cell
+		RollingAvg (int): Number of points to average for peak centre
+		DistanceModifier (int): Value to modify distance by
 
 	Returns:
-		float: Width of the cell at the point
+		float: Approximate width of the cell at the point
 		float: Distance from the membrane to the foci
-		float: Distance from the centre of the cell to the foci
 		ij.gui.Line: Line roi used to determine these values
-		int: Angle of the line
 	"""	
 
 	# Initialises a new empty results table
@@ -961,9 +866,9 @@ def lineRotationIterator(Image, Foci, CellRoi):
 	Image.setRoi(CellRoi)
 	# Measures the mean of the foci
 	An.measure()
-	# Currently using double width as starting point 
+	# Currently cell width as starting point 
 	# for length of line
-	Width = RTable.getValue("Minor", 0) * 2
+	Width = RTable.getValue("Minor", 0)
 
 	# Gets the centre of the cell
 	CentroidX = RTable.getValue("X", 0)
@@ -972,39 +877,60 @@ def lineRotationIterator(Image, Foci, CellRoi):
 	CentroidLine = Line(Foci[0], Foci[1], CentroidX, CentroidY)
 	# This angle gives the optimal line for the width for this foci
 	Angle = getRoiMeasurements(CentroidLine, Image, ["Angle"])[0]
-	# Needs to be set to something that is always 
-	# greater than all other widths found
-	TempWidth = float("inf")
 	# If the angle is negative will convert it to a positive angle
 	if Angle < 0:
 		Angle = 360 + Angle
+	if Angle > 180:
+		Angle = Angle - 180
+	else:
+		Angle = Angle + 180
+	# Gets the end of the line
+	End_X, End_Y = getLineEndCoords(CentroidX, CentroidY, Width, Angle)
+	# Generates the line roi
+	WidthLine = Line(CentroidX, CentroidY, End_X, End_Y)
 
-	# Gets the distance from the membrane to the foci,
-	# the distance from the centre of the cell to the foci
-	# and the line roi used to determine these values
-	FullWidHMax, membdist, centredist, MembraneLineRoi = distanceFromMembrane(
-		Angle, 
-		Foci, 
-		Image, 
-		Width,
-		R2_Cutoff,
-		FWHM_Modifier
+	WidthLine.setStrokeWidth(3)
+
+	# Gets the fluorescence intensity profile of the line
+	X_Values, Y_Values = getLineProfile(Image, WidthLine)
+	# Gets the peak centre of the line
+	PeakCentre = getPeakCentre(Y_Values, RollingAvg)
+	if PeakCentre == None:
+		return None, None, None
+	
+	# Applies the distance modifier to "width"
+	PeakCentre += DistanceModifier/2
+
+	# Gets the coordinates of the membrane peak
+	Membrane_X, Membrane_Y = getLineEndCoords(
+		CentroidX,
+		CentroidY,
+		PeakCentre,
+		Angle
 	)
-	# Will update the temporary values only if the width 
-	# is smaller than the current smallest width
-	if FullWidHMax < TempWidth:
-		TempWidth, TempMembDist, TempCentDist, TempWidthLine, TempAngle = (
-			FullWidHMax, 
-			membdist, 
-			centredist, 
-			MembraneLineRoi, 
-			Angle
-		)
-	# If it did not find a workable line will return None x 4
-	if TempWidth == float("inf"):
-		return None, None, None, None, None
-	# Otherwise will return the final values for the shortest width line
-	return TempWidth, TempMembDist, TempCentDist, TempWidthLine, TempAngle
+	# Gets the distance between the foci and the membrane
+	MembraneDistance = distanceBetweenPoints(
+		Foci[0],
+		Foci[1],
+		Membrane_X,
+		Membrane_Y
+	)
+	# Creates a line roi from the centroid to the membrane peak
+	CentroidLine = Line(
+		CentroidX, 
+		CentroidY, 
+		Membrane_X, 
+		Membrane_Y
+	)
+	# Converts the line roi to an area roi so can check if
+	# it contains the foci
+	CentroidLine.setStrokeWidth(2)
+	CentroidAreaRoi = CentroidLine.convertLineToArea(CentroidLine)
+	Contains = CentroidAreaRoi.containsPoint(Foci[0], Foci[1])
+	if not Contains:
+		return None, None, None
+
+	return PeakCentre*2, MembraneDistance, CentroidLine
 
 
 def getFociFocusValues(Image, Foci, Radius, Pixel_Scale):
@@ -1123,14 +1049,7 @@ def fociMeasurements(
 			# Iterates through foci within each cell roi
 			for CellFoci in Cell_to_Points_Dict[CellRoi]:
 				# Gets the distance measurements
-				(CellWidth, 
-				MembraneDistance, 
-				CentreDistance, 
-				LineRoi, 
-				Angle) = lineRotationIterator(
-					ImageList[0], 
-					CellFoci, 
-					CellRoiList[CellNumber])
+				CellWidth, MembraneDistance, LineRoi = centroidToCellEdge(ImageList[0], CellFoci, CellRoi, Rolling_Avg, MD_Modifier)
 				
 				# Checks that function was called successfully
 				# If not, skips to next foci
@@ -1172,8 +1091,7 @@ def fociMeasurements(
 				# Adds the data to the dictionary
 				DataDict[CellFoci] = [
 					CellWidth, 
-					MembraneDistance, 
-					CentreDistance,  
+					MembraneDistance,  
 					MeanList[0],
 					MeanList[1],
 					Mean_FWHM, 
@@ -1316,14 +1234,10 @@ def saveData(
 				MembraneDistance = OutputDictionary[CellFoci][1] * PixelScale
 				# Distance from the membrane normalised against cell width
 				RelativeMembraneDistance = MembraneDistance/(CellWidth/2)
-				# Distance from the centre of the cell adjusted for pixel scale
-				CentreDistance = OutputDictionary[CellFoci][2] * PixelScale
-				# Distance from the centre of the cell normalised against cell width
-				RelativeCentreDistance = CentreDistance/(CellWidth/2)
 				# Mean intensity of the foci in the membrane channel
-				MembraneSpotMean = OutputDictionary[CellFoci][3]
+				MembraneSpotMean = OutputDictionary[CellFoci][2]
 				# Mean intensity of the foci in the foci channel
-				FociSpotMean = OutputDictionary[CellFoci][4]
+				FociSpotMean = OutputDictionary[CellFoci][3]
 				# Mean intensity of the cell in the membrane channel
 				MembraneCellMean = MembraneCellMeans[AnalysedRoi][0]
 				# Max intensity of the cell in the membrane channel
@@ -1345,15 +1259,15 @@ def saveData(
 				# Trackmate quality of the foci
 				TrackMateQuality = QualityDict[CellFoci]
 				# Mean full width half max of the foci 
-				Mean_FWHM = OutputDictionary[CellFoci][5]
+				Mean_FWHM = OutputDictionary[CellFoci][4]
 				# Mean standard deviation of the foci full width half max
-				StandardDeviation = OutputDictionary[CellFoci][6]
+				StandardDeviation = OutputDictionary[CellFoci][5]
 				# Mean R squared of the foci gaussian curve fitting
-				Mean_R_Squared = OutputDictionary[CellFoci][7]
+				Mean_R_Squared = OutputDictionary[CellFoci][6]
 				# Mean residual sum of squares of the foci gaussian curve fitting
-				Mean_SDevRes = OutputDictionary[CellFoci][8]
+				Mean_SDevRes = OutputDictionary[CellFoci][7]
 				# Mean residual sum of squares of the foci gaussian curve fitting
-				Mean_ResSumSquared = OutputDictionary[CellFoci][9]
+				Mean_ResSumSquared = OutputDictionary[CellFoci][8]
 
 				# Adds the data to the results table
 				OutputTable.addValue("Image", ImageName)
@@ -1364,8 +1278,6 @@ def saveData(
 				OutputTable.addValue("Cell Width", CellWidth)
 				OutputTable.addValue("Membrane Distance", MembraneDistance)
 				OutputTable.addValue("Relative Membrane Distance", RelativeMembraneDistance)
-				OutputTable.addValue("Centre Distance", CentreDistance)
-				OutputTable.addValue("Relative Centre Distance", RelativeCentreDistance)
 				OutputTable.addValue("Foci Mean Intensity", FociSpotMean)
 				OutputTable.addValue("Whole Cell Mean", CellMean)
 				OutputTable.addValue("Fold increase over Cell", FoldIncrease)
